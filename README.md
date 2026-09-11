@@ -15,7 +15,7 @@ This asset, along with all the others, was built initially with **Claude Code** 
 inv.apply(DotInvOp.move(&"backpack", uid, &"belt", Vector2i(0, 0)))
 ```
 
-- **The network shape.** A client sends an op; a server answers yes or no. Sending *state* instead makes the server diff two documents to work out what a player claims to have done — and a diff is ambiguous: "this rifle moved" and "this rifle was destroyed and an identical one appeared" are the same diff, and only one of them is a duplication exploit.
+- **The network shape.** A client sends an op; a server answers yes or no. Sending *state* instead makes the server diff two documents to work out what a player claims to have done, and a diff is ambiguous: "this rifle moved" and "this rifle was destroyed and an identical one appeared" are the same diff, and only one of them is a duplication exploit.
 - **Undo.** An op names what it did rather than what the result looked like.
 - **A partial refusal.** One move out of ten can be refused without the other nine snapping back, which is what makes an inventory feel broken even when it is correct.
 - **Prediction.** A client applies locally, sends, and rolls back on a no.
@@ -28,11 +28,11 @@ A grid that keeps both a cell map and an item list can have them disagree. That 
 
 ## `ignore_uid`, and why moving something one cell to the left is hard
 
-An item moved within its own container collides with **itself**. The obvious workaround — remove it, then place it — is the one that loses the item when the place half fails. `fits(..., ignore_uid)` asks the question that was actually meant.
+An item moved within its own container collides with **itself**. The obvious workaround, which is to remove it and then place it, is the one that loses the item when the place half fails. `fits(..., ignore_uid)` asks the question that was actually meant.
 
 ## Nesting is bounded, and cycles are refused before they exist
 
-A bag inside itself is an infinite loop in every traversal — weight, save, draw, search — so the symptom is a hang, not a wrong number. And a bag in a bag in a bag with no limit is a save file whose size is the player's patience.
+A bag inside itself is an infinite loop in every traversal, whether that is weight, save, draw or search, so the symptom is a hang rather than a wrong number. And a bag in a bag in a bag with no limit is a save file whose size is the player's patience.
 
 `can_nest()` walks **up** from the destination before the move. A cycle that already exists cannot be found by anything that has to traverse the structure to look for it: that traversal *is* the hang.
 
@@ -45,6 +45,12 @@ A bag inside itself is an infinite loop in every traversal — weight, save, dra
 | "My rifle won't fit and there's clearly space" | Rotation is tried at each cell, not after a whole failed pass. |
 | "The sort order changes every time I open it" | `sort_custom` is not stable in Godot, so every comparison breaks ties on the id. |
 
+## Drag-and-drop asks the same question the server will
+
+`DotInvPanel` is a grid built in code with no art and no `Theme`, using Godot's own `_get_drag_data` / `_can_drop_data` / `_drop_data`, which is the **engine's** drag-and-drop rather than dot-ui's, so it works in a project with either and drops onto a screen stack without knowing what one is.
+
+`_can_drop_data` calls `manager.validate(op)`. A panel with its own idea of what fits will eventually disagree with the server, and the player then sees a move accepted on screen and undone a round trip later.
+
 ## Filtering and sorting are the client's
 
 The server owns what is in the inventory; the client owns how it is shown. Sending a filter to a server makes it responsible for a preference, costs a round trip per keystroke, and gives the player a list that lags behind their own typing. Same rule as the server-browser asset's.
@@ -53,8 +59,8 @@ The server owns what is in the inventory; the client owns how it is shown. Sendi
 
 `DotInvLoadoutLink`, by duck typing, so this asset parses in a project that does not have dot-loadout. The division is real:
 
-- **dot-loadout** answers *what do you own and what did you bring in* — a permanent, bounded document validated against entitlements before a match.
-- **dot-inventory** answers *what is in your bag right now* — it changes every few seconds, it has a shape, and a server must be able to refuse one move.
+- **dot-loadout** answers *what do you own and what did you bring in*. It is a permanent, bounded document validated against entitlements before a match.
+- **dot-inventory** answers *what is in your bag right now*. It changes every few seconds, it has a shape, and a server must be able to refuse one move.
 
 Neither direction is automatic. Whether a round's inventory is worth keeping is a design decision (an extraction game says yes, a round-based shooter says no), not something an asset should assume.
 
@@ -64,7 +70,7 @@ Copy `addons/dot_inventory/` and [`dot-core`](https://github.com/modcommunity/do
 
 ## Dependencies
 
-[dot-core](https://github.com/modcommunity/dot-core). Nothing else — dot-loadout and dot-ui are both optional and both reached without being named.
+[dot-core](https://github.com/modcommunity/dot-core). Nothing else. dot-loadout and dot-ui are both optional, and both reached without being named.
 
 ## License
 

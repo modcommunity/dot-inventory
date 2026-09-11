@@ -75,7 +75,15 @@ enum Kind {
 ## delivered content — and a server validating an inventory must not need an icon.
 @export var icon_path: String = ""
 
-## Anything the game wants. Copied on the way in and out; never shared.
+## Anything the game wants.
+##
+## [b]Read it through [method meta_copy], never off the field.[/b] A [Dictionary] is a
+## reference in GDScript and an item in a catalogue is ONE object shared by every stack of
+## it in every container -- so a game that writes into [code]item.meta[/code] to remember
+## something about one rifle has written it onto every rifle in the world, and nothing
+## errors. This family has paid for that aliasing four times, most expensively in
+## [code]DotLeaderboardDef.scoped()[/code], where every board on a server ended up with the
+## last scope anybody asked for.
 @export var meta: Dictionary = {}
 
 
@@ -100,6 +108,25 @@ func validate() -> DotResult:
 				DotError.CODE_INVALID, "'%s' is a container that stacks" % id
 			)
 	return DotResult.success(null)
+
+
+## A deep copy of [member meta], which is the only safe way to read it.
+##
+## Deep rather than shallow: a nested dictionary in a shallow copy is still the catalogue's.
+func meta_copy() -> Dictionary:
+	return meta.duplicate(true)
+
+
+## One value out of [member meta], copied if it is itself a container.
+func meta_value(key: StringName, fallback: Variant = null) -> Variant:
+	if not meta.has(key):
+		return fallback
+	var v: Variant = meta[key]
+	if v is Dictionary:
+		return (v as Dictionary).duplicate(true)
+	if v is Array:
+		return (v as Array).duplicate(true)
+	return v
 
 
 ## The footprint, honouring a rotation.

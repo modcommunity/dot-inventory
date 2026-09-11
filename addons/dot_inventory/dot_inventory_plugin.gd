@@ -14,6 +14,11 @@ const _TYPES := [
 		"Node",
 		"res://addons/dot_inventory/runtime/dot_inv_manager.gd",
 	],
+	[
+		"DotInvPanel",
+		"Control",
+		"res://addons/dot_inventory/runtime/dot_inv_panel.gd",
+	],
 ]
 
 

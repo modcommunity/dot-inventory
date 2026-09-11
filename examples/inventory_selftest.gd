@@ -11,8 +11,8 @@ extends Node
 ## godot --headless --path . res://examples/inventory_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 8
-const CHECKS := 86
+const SECTIONS := 9
+const CHECKS := 104
 
 var _passed := 0
 var _failed := 0
@@ -21,7 +21,9 @@ var _section_count := 0
 
 func _ready() -> void:
 	DotLog.set_level(DotLog.Level.ERROR)
-	_run()
+	# Awaited: the panel section waits a frame for a Control to lay itself out, and an
+	# un-awaited coroutine returns at its first `await` with the caller carrying on.
+	await _run()
 
 
 func _run() -> void:
@@ -36,6 +38,7 @@ func _run() -> void:
 	_test_nesting()
 	_test_rollback()
 	_test_query_and_loadout()
+	await _test_the_panel_asks_the_same_question()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -158,6 +161,32 @@ func _test_items() -> void:
 	_check(
 		int(c.container(&"backpack")["width"]) == 6,
 		"a container shape is handed out as a copy, not as the catalogue's own dictionary"
+	)
+
+	# The same aliasing one level down, and the more dangerous one: a catalogue item is ONE
+	# object shared by every stack of it in every container, so a game writing into
+	# `item.meta` about one rifle has written it onto every rifle in the world.
+	rifle.meta = {"ammo_type": &"762", "nested": {"n": 1}}
+	var taken := rifle.meta_copy()
+	taken["ammo_type"] = &"tampered"
+	(taken["nested"] as Dictionary)["n"] = 99
+	_check(
+		rifle.meta["ammo_type"] == &"762",
+		"meta is handed out as a copy, so one stack's notes are not every stack's"
+	)
+	_check(
+		int((rifle.meta["nested"] as Dictionary)["n"]) == 1,
+		"deeply, because a nested dictionary in a shallow copy is still the catalogue's"
+	)
+	var one: Variant = rifle.meta_value(&"nested")
+	(one as Dictionary)["n"] = 77
+	_check(
+		int((rifle.meta["nested"] as Dictionary)["n"]) == 1,
+		"and one value out of it is copied too"
+	)
+	_check(
+		rifle.meta_value(&"absent", "fallback") == "fallback",
+		"with a fallback for what is not there, rather than null"
 	)
 
 
@@ -568,6 +597,104 @@ class FakeLoadout:
 
 	func set_items(ids: PackedStringArray) -> void:
 		published = ids
+
+
+# --- 9 ----------------------------------------------------------------------
+
+func _test_the_panel_asks_the_same_question() -> void:
+	_section("A cell lights up because the manager said so")
+
+	var m := _manager()
+	m.apply(DotInvOp.add(&"rifle", 1, &"backpack"))
+	var bag := m.doc.get_container(&"backpack")
+	var uid: int = bag.entries.keys()[0]
+
+	var panel := DotInvPanel.new()
+	panel.name = "Panel"
+	panel.manager = m
+	panel.container_id = &"backpack"
+	add_child(panel)
+	await get_tree().process_frame
+	await get_tree().process_frame
+
+	# The one thing an assertion can reach about a Control, and the reason it is asserted:
+	# `set_anchors_preset` does not set offsets, and this family has shipped 0 x 0
+	# Controls twice with every property reading correctly both times.
+	_check(panel.size.x > 0.0 and panel.size.y > 0.0, "the panel has a size")
+	_check(
+		panel.custom_minimum_size.x >= 6.0 * float(panel.cell_size),
+		"as wide as the container it is drawing (%d cells)" % 6
+	)
+
+	var payload := {"uid": uid, "from": "backpack", "item": "rifle", "rotated": false}
+
+	# The decision this class exists for: the highlight comes from the same call the
+	# server will make. A panel with its own idea of what fits eventually disagrees, and
+	# the player sees a move accepted on screen and undone a round trip later.
+	_check(panel.may_drop(payload, Vector2i(1, 2)), "an empty cell accepts the drop")
+	_check(
+		not panel.may_drop(payload, Vector2i(5, 3)),
+		"and one where it would hang over the edge does not"
+	)
+	_check(
+		panel.may_drop(payload, Vector2i(0, 0)),
+		"including the cell it is already in, because an item may not collide with itself"
+	)
+
+	# The drop first, while the bag is otherwise empty. Adding the brick before this
+	# would make (1,1) a legitimate refusal -- a 4x2 rifle there reaches the cell the
+	# brick is in -- and the failure would read as the drop being broken.
+	var moves := []
+	panel.moved.connect(func(_op: DotInvOp, r: DotResult) -> void: moves.append(r))
+	var res := panel.do_drop(payload, Vector2i(1, 2))
+	_check(res.ok, "a drop applies")
+	_check(moves.size() == 1, "and announces itself once")
+	var moved_uid: int = bag.occupied_cells(m.catalogue).get(Vector2i(1, 2), 0)
+	_check(moved_uid != 0, "with the item where it was dropped")
+
+	# Placed explicitly rather than left to first_fit. A 2x2 into whatever is left after a
+	# 4x2 has moved is a placement that depends on the earlier drop, and a brick that did
+	# not fit would leave the next three lines indexing a dictionary by zero -- which is
+	# an aborted section rather than a failed check.
+	var brick_op := DotInvOp.add(&"brick", 1, &"backpack")
+	brick_op.to_cell = Vector2i(0, 0)
+	_check(m.apply(brick_op).ok, "and something else goes in beside it")
+	var brick_cell := Vector2i(0, 0)
+	var moved_payload := {
+		"uid": moved_uid, "from": "backpack", "item": "rifle", "rotated": false
+	}
+	_check(
+		not panel.may_drop(moved_payload, brick_cell),
+		"a cell something else is standing in is refused"
+	)
+
+	var refused := panel.do_drop(
+		{"uid": 99999, "from": "backpack", "item": "rifle", "rotated": false},
+		Vector2i(3, 3)
+	)
+	_check(not refused.ok, "and a drop of something that is not there is refused")
+
+	# `note_pickup` / `dragging_uid` are the pair a game greys out the containers it will
+	# not fit in with, and `dragging_uid` had no caller. The signal is asserted beside the
+	# accessor because a value produced correctly and consumed by nothing looks exactly
+	# like a value produced wrongly -- this family's second-most repeated shape.
+	var picked := []
+	panel.picked_up.connect(func(cid: StringName, u: int) -> void: picked.append([cid, u]))
+	_check(panel.dragging_uid() == 0, "nothing is being dragged to begin with")
+	panel.note_pickup(moved_uid)
+	_check(panel.dragging_uid() == moved_uid, "picking something up records what it is")
+	_check(
+		picked.size() == 1 and picked[0][0] == &"backpack" and picked[0][1] == moved_uid,
+		"and announces the container as well as the item, which is what a second panel needs"
+	)
+
+	panel.queue_free()
+	m.queue_free()
+	_done_panel()
+
+
+func _done_panel() -> void:
+	pass
 
 
 # --- Harness ---------------------------------------------------------------

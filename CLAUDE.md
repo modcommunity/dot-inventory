@@ -77,6 +77,7 @@ All three were in the suite rather than in the addon, and all three are worth wr
 | `DotInvManager` | Validates, applies, snapshots, predicts, rolls back. |
 | `DotInvQuery` | Filtering and sorting, locally. |
 | `DotInvLoadoutLink` | The only file that knows dot-loadout exists. |
+| `DotInvPanel` | A grid with native drag-and-drop. Asks `validate` before a cell lights up. |
 
 ## Decisions
 
@@ -102,7 +103,9 @@ It is the field a client would forge first. `apply(op, actor)` takes it from the
 
 ## Things deliberately not here
 
-- **A `Control`.** Godot's `_get_drag_data` / `_can_drop_data` / `_drop_data` are the drag-and-drop mechanism and they are engine, not dot-ui. What an inventory view needs from here is `validate(op)` to grey a slot out and `apply(op)` to commit — which is a two-method interface, and every game wants its own panel.
+- **A themed one.** `DotInvPanel` ships: a grid, native drag-and-drop through Godot's own `_get_drag_data` / `_can_drop_data` / `_drop_data` — which are the **engine**, not dot-ui, so it works in a project with either — and no art, no `Theme` and no icons. What it does not ship is a look. A game sets `icon_resolver` and a `Theme` and it is theirs.
+
+  The one thing in it that is a decision rather than a widget: **`_can_drop_data` asks `manager.validate(op)`**, which is the same call the server will make. A panel with its own idea of what fits is one that will eventually disagree, and the player then sees a move accepted on screen and undone a round trip later.
 - **Crafting.** A recipe is a rule over ids and a crafting table is a container with a rule; both are a layer above this and neither belongs in the thing that has to stay a document.
 - **Equipment stats.** What a rifle *does* is dot-combat's. This holds the id.
 - **A transport.** `send_fn` takes a dictionary. Same shape as dot-chat's router and dot-map's sync.
@@ -117,4 +120,4 @@ done
 timeout 180 godot --headless --path . res://examples/inventory_selftest.tscn
 ```
 
-8 sections, 86 checks. The ones that matter are the refusals — a move that does not fit, a bag inside itself, a split that is really a move, a weight cap, a rollback that does not duplicate. Every one of those is a real exploit in some shipped game, and none of them is visible in a screenshot.
+9 sections, 97 checks. The ones that matter are the refusals — a move that does not fit, a bag inside itself, a split that is really a move, a weight cap, a rollback that does not duplicate. Every one of those is a real exploit in some shipped game, and none of them is visible in a screenshot.
