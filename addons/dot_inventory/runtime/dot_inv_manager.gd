@@ -96,6 +96,17 @@ func setup(root_containers: Array = []) -> DotResult:
 
 	if register_as_service:
 		DotRegistry.register(SERVICE, self)
+
+	DotLog.info(
+		CHANNEL,
+		"inventory ready",
+		{
+			"containers": doc.containers.size(),
+			"items": catalogue.items.size(),
+			"authoritative": authoritative,
+			"rate": ops_per_second,
+		}
+	)
 	return DotResult.success(null)
 
 
@@ -118,16 +129,19 @@ func apply(op: DotInvOp, actor: StringName = &"local") -> DotResult:
 		var limited := DotResult.fail(
 			DotError.CODE_RATE_LIMITED, "too many inventory operations"
 		)
+		_note_refusal(op, limited)
 		refused.emit(op, limited)
 		return limited
 
 	if may_apply.is_valid() and not bool(may_apply.call(op, doc)):
 		var vetoed := DotResult.fail(DotError.CODE_FORBIDDEN, "the game refused that")
+		_note_refusal(op, vetoed)
 		refused.emit(op, vetoed)
 		return vetoed
 
 	var check := validate(op)
 	if not check.ok:
+		_note_refusal(op, check)
 		refused.emit(op, check)
 		return check
 
@@ -139,6 +153,14 @@ func apply(op: DotInvOp, actor: StringName = &"local") -> DotResult:
 		# has the matching lesson from dot-props: one list used for two purposes meant
 		# trimming it for one purpose silently changed the other.
 		doc.adopt(before, catalogue)
+		# ERROR rather than the DEBUG the refusals get: a validated op that then failed
+		# half way through is this addon having got something wrong, not a player having
+		# asked for something silly.
+		DotLog.error(
+			CHANNEL,
+			"an inventory operation failed after it had been validated",
+			{"actor": op.actor, "op": op.kind, "why": res.error.message}
+		)
 		refused.emit(op, res)
 		return res
 
@@ -156,6 +178,32 @@ func apply(op: DotInvOp, actor: StringName = &"local") -> DotResult:
 
 	applied.emit(op, res)
 	return res
+
+
+## Records a refused operation.
+##
+## [b]DEBUG, not WARN.[/b] On an authoritative server a refusal is the system working:
+## a client asked for something it was not allowed and was told no, which happens
+## constantly and legitimately — a stack that will not fit, a slot already taken, a
+## predicted move that lost the race. Logging each at WARN would fill an operator's log
+## with the sound of the rules being enforced.
+##
+## It is still logged, because the question it answers is asked often and cannot be
+## answered any other way: "where did my item go". Turn the channel up for one server —
+## [code]log channel inventory debug[/code] — rather than leaving it up everywhere.
+func _note_refusal(op: DotInvOp, res: DotResult) -> void:
+	if not DotLog.enabled(DotLog.Level.DEBUG, CHANNEL):
+		return
+	DotLog.debug(
+		CHANNEL,
+		"inventory operation refused",
+		{
+			"actor": op.actor,
+			"op": op.kind,
+			"code": res.code(),
+			"why": res.error.message if res.error != null else "",
+		}
+	)
 
 
 ## Checks an op without applying it. What a view greys a slot out with.
