@@ -72,6 +72,6 @@ Copy `addons/dot_inventory/` and [`dot-core`](https://github.com/modcommunity/do
 
 [dot-core](https://github.com/modcommunity/dot-core). Nothing else. dot-loadout and dot-ui are both optional, and both reached without being named.
 
-## License
+## Licence
 
-MIT.
+MIT. See [LICENSE](LICENSE).
