@@ -32,6 +32,9 @@ const CHANNEL := "inventory"
 ## Anything with [code]slots()[/code] and [code]item_in(slot)[/code].
 var loadout: Object = null
 
+## Whether the "cannot use this loadout" warning has been written, so it is written once.
+var _warned_unusable: bool = false
+
 
 static func of(loadout_manager: Object) -> DotInvLoadoutLink:
 	var l := DotInvLoadoutLink.new()
@@ -60,6 +63,7 @@ func fill_from_loadout(
 ) -> PackedStringArray:
 	var missed := PackedStringArray()
 	if not usable():
+		_warn_unusable("fill")
 		return missed
 
 	var slot_names: Variant = loadout.call("slots")
@@ -100,4 +104,23 @@ func publish_to_loadout(manager: DotInvManager, container_id: StringName) -> Pac
 		ids.append(str((c.entries[uid] as Dictionary).get("item", "")))
 	if loadout.has_method("set_items"):
 		loadout.call("set_items", ids)
+	else:
+		_warn_unusable("publish")
 	return ids
+
+
+## Once per link, and only when something WAS wired: a null loadout is a game with no
+## dot-loadout, which is the ordinary case and not worth a line. Anything else that fails
+## the duck-typed check means a round starts with empty hands, or ends without keeping
+## what survived, and nothing else in the process would say why. WARN, because it is
+## wiring somebody has to fix.
+func _warn_unusable(what: String) -> void:
+	if _warned_unusable or loadout == null or not is_instance_valid(loadout):
+		return
+	_warned_unusable = true
+	DotLog.warn(CHANNEL, "the loadout link cannot use what it was given; nothing crosses", {
+		"during": what,
+		"given": loadout.get_class() if loadout.get_script() == null
+			else String(loadout.get_script().get_global_name()),
+		"needs": "slots(), item_in(slot), set_items(ids)",
+	})

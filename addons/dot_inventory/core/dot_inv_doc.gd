@@ -13,7 +13,8 @@ extends RefCounted
 ## rather than after: a cycle that has been created cannot be detected by anything that has
 ## to traverse the structure to look for it.
 
-const CHANNEL := "inventory"
+# No log channel: a value object. can_nest() and adopt() return a DotResult, and
+# DotInvManager -- which knows the player and the op -- logs the refusal at DEBUG.
 
 ## container id -> [DotInvContainer].
 var containers: Dictionary = {}
