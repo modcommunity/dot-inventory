@@ -57,7 +57,7 @@ The server owns what is in the inventory; the client owns how it is shown. Sendi
 
 ## It meets dot-loadout in exactly one file
 
-`DotInvLoadoutLink`, by duck typing, so this asset parses in a project that does not have dot-loadout. The division is real:
+`DotInvLoadoutLink`, by duck typing, so this asset parses in a project that does not have dot-loadout. Hand it one player's `DotLoadout` (from `await loadout_manager.active_for(key)`, copied): `fill_from_loadout` pours it into a container at match start, `publish_to_loadout` clears the slots whose items did not survive, and `loadout_manager.publish` validates and saves the result. The division is real:
 
 - **dot-loadout** answers *what do you own and what did you bring in*. It is a permanent, bounded document validated against entitlements before a match.
 - **dot-inventory** answers *what is in your bag right now*. It changes every few seconds, it has a shape, and a server must be able to refuse one move.

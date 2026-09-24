@@ -11,8 +11,8 @@ extends Node
 ## godot --headless --path . res://examples/inventory_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 9
-const CHECKS := 104
+const SECTIONS := 10
+const CHECKS := 113
 
 var _passed := 0
 var _failed := 0
@@ -39,6 +39,7 @@ func _run() -> void:
 	_test_rollback()
 	_test_query_and_loadout()
 	await _test_the_panel_asks_the_same_question()
+	_test_the_real_loadout()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -584,19 +585,44 @@ func _test_query_and_loadout() -> void:
 class FakeLoadout:
 	extends RefCounted
 
-	## A stand-in for dot-loadout's manager: `slots()` and `item_in()` and nothing else,
-	## which is exactly the surface DotInvLoadoutLink duck-types against.
+	## dot-loadout's DotLoadout, the per-player document, reduced to what the link calls --
+	## with the real signatures, not invented ones. The link used to duck-type against
+	## `slots()` and `set_items()`, which this fake had and dot-loadout never did, so it
+	## passed here and worked nowhere. Section 10 runs the same calls against the real one.
 
-	var published: PackedStringArray = PackedStringArray()
+	var entries: Dictionary = {}
+	var counts: Dictionary = {}
 
-	func slots() -> PackedStringArray:
-		return PackedStringArray(["primary", "secondary"])
+	func _init() -> void:
+		entries[&"primary"] = &"rifle"
+		entries[&"secondary"] = &"not_in_this_catalogue"
 
-	func item_in(slot: String) -> String:
-		return "rifle" if slot == "primary" else "not_in_this_catalogue"
+	func set_item(slot_id: StringName, item_id: StringName, count: int = 0) -> void:
+		if item_id == &"":
+			clear_slot(slot_id)
+			return
+		entries[slot_id] = item_id
+		if count > 0:
+			counts[slot_id] = count
+		else:
+			counts.erase(slot_id)
 
-	func set_items(ids: PackedStringArray) -> void:
-		published = ids
+	func clear_slot(slot_id: StringName) -> void:
+		entries.erase(slot_id)
+		counts.erase(slot_id)
+
+	func item_in(slot_id: StringName) -> StringName:
+		return entries.get(slot_id, &"")
+
+	func count_in(slot_id: StringName, fallback: int = 1) -> int:
+		return int(counts.get(slot_id, fallback))
+
+	func filled_slots() -> Array[StringName]:
+		var out: Array[StringName] = []
+		for key in entries.keys():
+			out.append(key)
+		out.sort()
+		return out
 
 
 # --- 9 ----------------------------------------------------------------------
@@ -698,6 +724,69 @@ func _done_panel() -> void:
 
 
 # --- Harness ---------------------------------------------------------------
+
+# --- 10 ---------------------------------------------------------------------
+
+const REAL_LOADOUT := "res://addons/dot_loadout/core/dot_loadout.gd"
+const REAL_LOADOUT_MANAGER := "res://addons/dot_loadout/dot_loadout_manager.gd"
+
+
+## Against dot-loadout itself, linked into this project for the test (see .gitignore),
+## and reached by path so that nothing here names a class this addon cannot depend on.
+func _test_the_real_loadout() -> void:
+	_section("The link speaks the real dot-loadout, not a fake of itself")
+
+	var linked := ResourceLoader.exists(REAL_LOADOUT)
+	_check(linked, "dot-loadout is linked (ln -s ../../dot-loadout/addons/dot_loadout addons/)")
+	if not linked:
+		return
+
+	var doc: Object = (load(REAL_LOADOUT) as GDScript).new()
+	doc.call("set_item", &"primary", &"rifle")
+	doc.call("set_item", &"secondary", &"not_in_this_catalogue")
+	doc.call("set_item", &"sidearm_ammo", &"ammo", 20)
+
+	var link := DotInvLoadoutLink.of(doc)
+	_check(link.usable(), "a real DotLoadout is usable")
+
+	var m := _manager()
+	var missed := link.fill_from_loadout(m, &"backpack")
+	var bag := m.doc.get_container(&"backpack")
+	_check(bag.count_of(&"rifle") == 1, "a real loadout fills a bag")
+	_check(bag.count_of(&"ammo") == 20, "carrying the slot's count, not one of everything")
+	_check(
+		missed.size() == 1 and missed[0] == "not_in_this_catalogue",
+		"and what this catalogue lacks comes back as missed"
+	)
+
+	# The rifle is lost in the match; the ammo survives.
+	var rifle_uid := -1
+	for uid in bag.entries.keys():
+		if StringName(str((bag.entries[uid] as Dictionary).get("item", ""))) == &"rifle":
+			rifle_uid = int(uid)
+	m.apply(DotInvOp.drop(&"backpack", rifle_uid))
+
+	var cleared := link.publish_to_loadout(m, &"backpack")
+	_check(
+		cleared.size() == 1 and cleared[0] == "primary"
+		and doc.call("item_in", &"primary") == &"",
+		"what did not survive leaves the real loadout"
+	)
+	_check(doc.call("item_in", &"sidearm_ammo") == &"ammo", "and what did stays")
+	_check(
+		doc.call("item_in", &"secondary") == &"not_in_this_catalogue",
+		"and an item this inventory never carried is not stripped from it"
+	)
+
+	# The mistake the old wording invited: handing over the manager instead of a document.
+	var manager: Object = (load(REAL_LOADOUT_MANAGER) as GDScript).new()
+	_check(
+		not DotInvLoadoutLink.of(manager).usable(),
+		"the loadout manager itself is not a loadout, and the link says so"
+	)
+	manager.free()
+	m.queue_free()
+
 
 func _section(title: String) -> void:
 	_section_count += 1

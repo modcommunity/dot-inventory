@@ -2,10 +2,12 @@
 .godot/
 /android/
 
-# dot-core is a separate repository. For local development, symlink it:
-#   ln -s ../../dot-core/addons/dot_core addons/dot_core
-# Consumers copy both addons into their own project.
+# Sibling repositories, linked for local development:
+#   ln -s ../../<repo>/addons/<addon> addons/<addon>
+# dot-core is the one dependency. dot-loadout is linked only so the self-test can run
+# DotInvLoadoutLink against the real document; the addon itself never names it.
 /addons/dot_core
+/addons/dot_loadout
 
 # Exports
 build/

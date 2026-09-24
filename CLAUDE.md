@@ -6,6 +6,7 @@ An inventory as a document a server validates, mutated only by ops it can refuse
 
 ```bash
 ln -s ../../dot-core/addons/dot_core addons/dot_core
+ln -s ../../dot-loadout/addons/dot_loadout addons/dot_loadout   # the self-test only
 ```
 
 ## Why this is not dot-loadout
@@ -21,6 +22,8 @@ ln -s ../../dot-core/addons/dot_core addons/dot_core
 | On a refusal | The publish fails | That one move fails, and nothing else moves |
 
 Building one on the other would mean either a loadout that has to be re-validated on every drag, or an inventory whose refusal throws away nine good moves. They meet in **one file** — `DotInvLoadoutLink`, duck-typed — which is the same arrangement dot-npc-ai has with dot-npc.
+
+**The link takes one player's `DotLoadout`, not the `DotLoadoutManager`.** Until 2026-09-24 it duck-typed against `slots()` and `set_items()`, which nothing in dot-loadout has — it worked only against the self-test's own fake. It now reads `filled_slots()` / `item_in()` / `count_in()` and writes `clear_slot()`, which are the document's real methods; the game gets the document from `await manager.active_for(key)` (a copy of it, since the manager caches the original) and hands the edited copy to `manager.publish`, which stays dot-loadout's trust boundary. Only removal crosses back: which slot a new item belongs in is the schema's question. The self-test's section 10 runs against the real dot-loadout, linked for the test the way dot-team links dot-spectate, and reached by path so the addon still names nothing.
 
 ## The central decision: every mutation is an op
 
@@ -120,4 +123,4 @@ done
 timeout 180 godot --headless --path . res://examples/inventory_selftest.tscn
 ```
 
-9 sections, 97 checks. The ones that matter are the refusals — a move that does not fit, a bag inside itself, a split that is really a move, a weight cap, a rollback that does not duplicate. Every one of those is a real exploit in some shipped game, and none of them is visible in a screenshot.
+10 sections, 113 checks (section 10 needs dot-loadout linked). The ones that matter are the refusals — a move that does not fit, a bag inside itself, a split that is really a move, a weight cap, a rollback that does not duplicate. Every one of those is a real exploit in some shipped game, and none of them is visible in a screenshot.
