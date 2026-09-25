@@ -20,6 +20,24 @@ inv.apply(DotInvOp.move(&"backpack", uid, &"belt", Vector2i(0, 0)))
 - **A partial refusal.** One move out of ten can be refused without the other nine snapping back, which is what makes an inventory feel broken even when it is correct.
 - **Prediction.** A client applies locally, sends, and rolls back on a no.
 
+## A client predicts, and the server's own changes land underneath
+
+A predicting manager (`authoritative = false`) keeps what it has applied and not heard about. Three calls reconcile it with the server:
+
+```gdscript
+inv.confirm(op_dict)                 # the server said yes
+var lost := inv.rollback(op_dict)    # the server said no: undo that op, and only that op
+inv.apply_authoritative(server_op)   # a change the server made: a purchase, a reward
+```
+
+- **A rollback undoes one op.** The document is rewound to before it and everything predicted after it is re-applied, so a refusal does not take a later move the server is about to accept with it. Anything that no longer applies without it is taken out of the pending list, returned, and reported through `dropped` — the server will refuse it too.
+- **A server's op lands underneath the predictions.** Answers come back in order, so anything still in flight is something the server has not processed yet: the server applied its own op first. `apply_authoritative` rewinds to before the oldest pending op, applies the server's, and re-applies the predictions on top. For an ADD that matters most, because first-fit on the client's predicted layout is not where the server put it. It is never sent back up and never rate-limited.
+- **A move keeps its uid.** Ops name entries by uid, and a client chains its second op onto the uid its first one predicted; a move that re-allocated the uid handed that number to whatever the server added in between.
+
+`unlimited_actors` exempts actors from `ops_per_second` — the actor a server applies its own purchases and gives as, which would otherwise spend a player's budget.
+
+`validate` asks everything `apply` will find out, room included: an ADD into a full container is refused as `CODE_QUOTA` by `validate`, so a shop can ask before it charges. An ADD that only half fits is allowed, and adds the half.
+
 ## The occupancy map is derived, never stored
 
 A grid that keeps both a cell map and an item list can have them disagree. That is this family's most expensive bug shape in its own words: the props asset once used one list for ownership *and* undo, so trimming it for one purpose silently changed the other and a player could hold any number of props for free.

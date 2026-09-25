@@ -42,7 +42,7 @@ An op names the change, so:
 
 `apply()` snapshots the document before performing, and both the failure path and `rollback()` restore it. An inverse is tempting and wrong: an op that failed **part-way** is exactly the case an inverse cannot describe, and inventing one is how a rollback becomes a duplication.
 
-The snapshots are bounded at 64, because an unbounded undo history is a memory leak with a plausible name — the same shape as dot-console's scrollback and dot-timer's `max_replay_seconds`.
+The snapshots are bounded at 64, because an unbounded undo history is a memory leak with a plausible name — the same shape as dot-console's scrollback and dot-timer's `max_replay_seconds`. A rollback or an `apply_authoritative` that has to rewind past the oldest one cannot, and says so at WARN: the caller's copy then needs the server's whole document, which is why game-playground asks for one past 48 ops in flight.
 
 ## Two derived things that must never be stored
 
@@ -68,6 +68,19 @@ All three were in the suite rather than in the addon, and all three are worth wr
 - **A test whose arithmetic was wrong.** 20 kg plus 20 kg in a 30 kg bag is refused, and the check expected it to fit. The fix was worth more than the line: the section now asserts there *was* room for it, so the refusal is provably the weight cap and not the space.
 - **A 2×2 pouch will not go into a 2×2 pouch that has one round of ammunition in it.** Correct, and it looked exactly like the nesting being broken. The ammunition is dropped explicitly now, with the reason written beside it — the space rule and the nesting rule produce identical symptoms from outside.
 
+## What a real wire found
+
+Six, all in the addon, found on 2026-09-25 when game-playground carried a bag over dot-net — the first time any of `send_fn`, `confirm` and `rollback` had been called by anything but this suite, in one process, with the "server" a second manager in the same scene. Each was reproduced in section 11 against this addon alone before it was fixed, and each check there was armed: the fix taken out, the suite run, the check failing, the fix put back.
+
+- **`validate` passed an ADD into a full container.** `_validate_add` asked the item, the container and the weight, never room; `_do_add` found out by running out of it, and the manager logged **ERROR** "failed after it had been validated" for an ordinary full bag. A shop asking `validate` before charging charged for a purchase that then failed. `_room_for_add` now asks exactly what `_do_add` will look for — top-ups first, a named cell, then first-fit — and refuses with `CODE_QUOTA`. An ADD that tops up or places anything is still allowed, because a pickup that half fits adds the half.
+- **`rollback(A)` undid B as well.** It restored the snapshot from before A and cut the history there, which discarded every op predicted after A while leaving them in the pending list: a move the server was about to accept vanished from the client's bag and nothing put it back. It now rewinds and re-applies what came after, without A; what no longer applies is taken out of the pending list, returned, and reported through `dropped`. And on a predicting manager a rollback of an op that is not pending does nothing: it used to fall back to the newest content match in the history, which for "drop one of these", sent twice, is the one the server ACCEPTED.
+- **Nothing applied a server's op to a predicting manager.** `apply` on one keeps the op as the client's own and calls `send_fn`, so a purchase sent down went straight back up and was refused. `apply_authoritative` applies without sending, and lands the op **underneath** the predictions — rewind to the oldest pending, re-apply what was decided in the order it arrived, then this, then the pending in the order predicted — because an ordered channel means the server applied it before anything it has not answered yet. Every rewind re-applies through `_reapply`, not `apply`: not limited, not vetoed and not sent a second time.
+- **The rate limit could not exempt the authority.** Keyed per actor, so a server applying its own gives as the player spent the player's budget, and as its own actor capped itself at thirty a second. `unlimited_actors`, empty by default.
+- **A MOVE re-allocated the uid**, even within one container (remove, then re-add). A client chaining a second op onto the uid its first predicted named whatever the server had allocated that number to — measured: a crate the server added in between, moved validly and in silence. A move within a container now edits the entry in place; across containers it keeps the uid unless the destination already uses it (`DotInvContainer.add_entry_keeping`), because uids are per container.
+- **Applying an ADD rewrote the caller's op.** `_do_add` set `op.to_cell` to `(-1, -1)` after the first placement, so the dictionary sent was not the op the caller made, and an ADD replayed after a rollback lost its named cell. A local now.
+
+The shape under the last four is one sentence: **identity matters once there is a wire.** In one process an op, an entry and an actor can be told apart by being the same object; across a wire each needs a name that survives — which is why the history is searched by identity (`_history_index`), never by content, whenever the object is to hand.
+
 ## The pieces
 
 | | |
@@ -77,7 +90,7 @@ All three were in the suite rather than in the addon, and all three are worth wr
 | `DotInvContainer` | A grid or a list of slots. Both, because only the geometry differs. |
 | `DotInvDoc` | Several containers, the parent links, the depth bound and the cycle test. |
 | `DotInvOp` | One mutation. The wire format, the undo record and the refusal unit. |
-| `DotInvManager` | Validates, applies, snapshots, predicts, rolls back. |
+| `DotInvManager` | Validates, applies, snapshots, predicts, rolls back, and lands a server's op underneath the predictions. |
 | `DotInvQuery` | Filtering and sorting, locally. |
 | `DotInvLoadoutLink` | The only file that knows dot-loadout exists. |
 | `DotInvPanel` | A grid with native drag-and-drop. Asks `validate` before a cell lights up. |
@@ -94,7 +107,7 @@ The rule dot-props, dot-audio and dot-fx all follow: a **mounted pack's `class_n
 
 ### The rate limit is per actor
 
-An inventory is the cheapest denial of service a client has: a move is a validation, a weight sum and a redraw, sent as fast as it likes. `DotRateLimiter` is keyed on the actor, because one shared bucket means one player flooding throttles everybody.
+An inventory is the cheapest denial of service a client has: a move is a validation, a weight sum and a redraw, sent as fast as it likes. `DotRateLimiter` is keyed on the actor, because one shared bucket means one player flooding throttles everybody. `unlimited_actors` names the ones it never applies to — the actor a server applies its own purchases and gives as, which cannot flood itself and otherwise spent whoever's bag it was changing.
 
 ### `actor` is set by the receiver, never read off the wire
 
@@ -123,4 +136,4 @@ done
 timeout 180 godot --headless --path . res://examples/inventory_selftest.tscn
 ```
 
-10 sections, 113 checks (section 10 needs dot-loadout linked). The ones that matter are the refusals — a move that does not fit, a bag inside itself, a split that is really a move, a weight cap, a rollback that does not duplicate. Every one of those is a real exploit in some shipped game, and none of them is visible in a screenshot.
+11 sections, 138 checks (section 10 needs dot-loadout linked). The ones that matter are the refusals — a move that does not fit, a bag inside itself, a split that is really a move, a weight cap, a rollback that does not duplicate. Every one of those is a real exploit in some shipped game, and none of them is visible in a screenshot.

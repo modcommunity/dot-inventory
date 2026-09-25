@@ -199,6 +199,23 @@ func add_entry(entry: Dictionary) -> int:
 	return uid
 
 
+## Adds [param entry] under [param uid] when this container does not already use it, and
+## under a fresh uid when it does. Returns the uid it went in under.
+##
+## [b]What a MOVE between containers uses, so that an item keeps its name.[/b] Ops name an
+## entry by uid, and a client chaining a second op onto the first one's result is naming a
+## uid it predicted. A move that re-allocated handed that number to whatever the server
+## allocated next, which is a different item whenever the server added something in between.
+## Uids are per container, so a collision in the destination still has to re-allocate; the
+## counter is raised past a kept uid so it is never issued again here.
+func add_entry_keeping(uid: int, entry: Dictionary) -> int:
+	if uid <= 0 or entries.has(uid):
+		return add_entry(entry)
+	entries[uid] = entry
+	_next_uid = maxi(_next_uid, uid + 1)
+	return uid
+
+
 func remove_entry(uid: int) -> Dictionary:
 	var e: Dictionary = entries.get(uid, {})
 	entries.erase(uid)

@@ -32,6 +32,15 @@ signal refused(op: DotInvOp, res: DotResult)
 ## The whole document was replaced — loaded, or corrected by a server.
 signal reloaded()
 
+## A predicted op no longer applies after a correction — a rollback of something before it,
+## or an authoritative op landing underneath it — and has been taken out of the pending list.
+##
+## The server will refuse it too, since it is being decided against the same state. A client
+## that keeps its own record of what is in flight must stop expecting a yes for it, and must
+## not roll it back when the no arrives: it is no longer applied, and a rollback of an op that
+## is not there restores the wrong snapshot.
+signal dropped(op: DotInvOp, res: DotResult)
+
 @export var catalogue: DotInvCatalogue = null
 
 ## Whether this instance decides, or predicts and waits.
@@ -51,6 +60,15 @@ signal reloaded()
 ## weight sum and a redraw, and a client can send them as fast as it likes.
 @export_range(0, 1000, 1) var ops_per_second: int = 30
 
+## Actors [member ops_per_second] never applies to. Empty by default, so every actor is limited.
+##
+## [b]For the authority's own changes.[/b] A server applying a purchase, a reward or an admin's
+## give as its own actor otherwise spends a bucket meant for what a CLIENT sends — thirty
+## things given in one tick and the thirty-first is "too many inventory operations" (measured
+## in game-playground). A separate actor alone only moves that cap onto the server. The limit is
+## about who can flood, and the server cannot flood itself.
+@export var unlimited_actors: Array[StringName] = []
+
 @export var register_as_service: bool = true
 
 ## Where an op goes when this instance is not the authority.
@@ -65,6 +83,10 @@ var send_fn: Callable = Callable()
 var may_apply: Callable = Callable()
 
 var doc: DotInvDoc = null
+
+## How many snapshots are kept. An unbounded undo history is a memory leak with a plausible
+## name; a rollback or an authoritative op reaching past the oldest cannot rewind.
+const MAX_HISTORY := 64
 
 var _limiter: DotRateLimiter = null
 var _history: Array[Dictionary] = []
@@ -125,7 +147,7 @@ func apply(op: DotInvOp, actor: StringName = &"local") -> DotResult:
 
 	# Keyed by the actor: one player flooding must not throttle everybody else's
 	# inventory, which is what a single shared bucket does.
-	if _limiter != null and not _limiter.allow(actor):
+	if _limiter != null and not unlimited_actors.has(actor) and not _limiter.allow(actor):
 		var limited := DotResult.fail(
 			DotError.CODE_RATE_LIMITED, "too many inventory operations"
 		)
@@ -145,28 +167,10 @@ func apply(op: DotInvOp, actor: StringName = &"local") -> DotResult:
 		refused.emit(op, check)
 		return check
 
-	var before := doc.to_dictionary()
-	var res := _perform(op)
+	var res := _commit(op)
 	if not res.ok:
-		# Restored from the snapshot rather than undone step by step. An op that failed
-		# part-way through is exactly the case an inverse cannot describe, and this family
-		# has the matching lesson from dot-props: one list used for two purposes meant
-		# trimming it for one purpose silently changed the other.
-		doc.adopt(before, catalogue)
-		# ERROR rather than the DEBUG the refusals get: a validated op that then failed
-		# half way through is this addon having got something wrong, not a player having
-		# asked for something silly.
-		DotLog.error(
-			CHANNEL,
-			"an inventory operation failed after it had been validated",
-			{"actor": op.actor, "op": op.kind, "why": res.error.message}
-		)
 		refused.emit(op, res)
 		return res
-
-	_history.append({"op": op, "before": before})
-	while _history.size() > 64:
-		_history.remove_at(0)
 
 	if not authoritative:
 		# Kept so it can be rolled back. A client that applies an op and does not keep it
@@ -177,6 +181,87 @@ func apply(op: DotInvOp, actor: StringName = &"local") -> DotResult:
 			send_fn.call(op.to_dictionary())
 
 	applied.emit(op, res)
+	return res
+
+
+## Applies an op the authority has already decided, without sending it anywhere.
+##
+## [b]What a predicting client does with a change the SERVER made[/b] — a purchase, a reward,
+## an admin's give. [method apply] cannot be used for it: on a predicting manager it keeps the
+## op as the client's own and calls [member send_fn], so the server's ADD would go straight
+## back up as the client's ADD and be refused.
+##
+## [b]It lands underneath the predictions, not on top of them.[/b] Acks come back in order, so
+## anything this client has predicted and not heard about is something the server has not yet
+## processed — the server applied THIS op first. So the document is rewound to before the
+## oldest pending op, everything the server has already decided is re-applied in the order it
+## arrived, then this op, then the pending ops in the order they were predicted. That matters
+## for an ADD most: it is placed by first-fit, and first-fit on the client's predicted layout
+## is not where the server put it. A pending op that no longer applies is taken out and
+## reported through [signal dropped].
+##
+## Never rate-limited and never put to [member may_apply]: the authority has already decided,
+## and a copy that refuses the authority's decision is a copy that is now wrong. It is still
+## validated, because the document must stay a document; a refusal here means this copy has
+## diverged from the server's, and the answer is the server's whole document.
+##
+## On an authoritative manager it is [method apply] without the limit or the veto — for the
+## authority's own changes, where the caller is the one deciding.
+func apply_authoritative(op: DotInvOp, actor: StringName = &"server") -> DotResult:
+	op.actor = actor
+	var from := _history_index(_pending[0]) if not _pending.is_empty() else -1
+	if _pending.is_empty() or from < 0:
+		if not _pending.is_empty():
+			DotLog.warn(CHANNEL, "an authoritative op arrived with more in flight than is kept; applied on top", {
+				"pending": _pending.size(), "kept": _history.size(),
+			})
+		var check := validate(op)
+		if not check.ok:
+			_note_refusal(op, check)
+			refused.emit(op, check)
+			return check
+		var res := _commit(op)
+		if not res.ok:
+			refused.emit(op, res)
+			return res
+		applied.emit(op, res)
+		return res
+
+	var rebuilt := _rebuild(from, null, op)
+	var landed: DotResult = rebuilt["extra"]
+	if landed.ok:
+		applied.emit(op, landed)
+	else:
+		_note_refusal(op, landed)
+		refused.emit(op, landed)
+	reloaded.emit()
+	return landed
+
+
+## Snapshots, performs and records one op that has already been validated.
+##
+## Restored from the snapshot on a failure rather than undone step by step. An op that failed
+## part-way through is exactly the case an inverse cannot describe, and this family has the
+## matching lesson from dot-props: one list used for two purposes meant trimming it for one
+## purpose silently changed the other.
+func _commit(op: DotInvOp) -> DotResult:
+	var before := doc.to_dictionary()
+	var res := _perform(op)
+	if not res.ok:
+		doc.adopt(before, catalogue)
+		# ERROR rather than the DEBUG the refusals get: a validated op that then failed
+		# half way through is this addon having got something wrong, not a player having
+		# asked for something silly. Which is why validation has to ask everything the
+		# perform will find out — room included — or an ordinary full bag reads as a bug.
+		DotLog.error(
+			CHANNEL,
+			"an inventory operation failed after it had been validated",
+			{"actor": op.actor, "op": op.kind, "why": res.error.message}
+		)
+		return res
+	_history.append({"op": op, "before": before})
+	while _history.size() > MAX_HISTORY:
+		_history.remove_at(0)
 	return res
 
 
@@ -243,6 +328,35 @@ func _validate_add(op: DotInvOp) -> DotResult:
 		return DotResult.fail(DotError.CODE_INVALID, "adding %d of something" % op.count)
 	if not c.within_weight(item.weight * float(op.count), catalogue, doc):
 		return DotResult.fail(DotError.CODE_QUOTA, "'%s' is too heavy for that" % op.item)
+	return _room_for_add(item, c, op)
+
+
+## Whether [method _do_add] will find room, asked the same way it will look for it.
+##
+## [b]Validation has to ask everything the perform finds out.[/b] Until 2026-09-25 an ADD
+## into a full container passed [method validate], and [method _do_add] discovered the lack
+## of room by running out of it — so a shop that asked `validate` first charged for a
+## purchase that then failed, and the failure was logged as an ERROR ("failed after it had
+## been validated") for what is an ordinary full bag.
+##
+## The rules mirror [method _do_add] exactly: existing stacks are topped up first; a named
+## cell must take the first new stack; otherwise the first new stack goes by first-fit, and
+## an ADD that tops up or places anything at all is a (partial) success, never a refusal.
+func _room_for_add(item: DotInvItem, c: DotInvContainer, op: DotInvOp) -> DotResult:
+	var topup := 0
+	if item.stack_max > 1:
+		for uid in c.entries.keys():
+			var e: Dictionary = c.entries[uid]
+			if str(e.get("item", "")) == String(item.id):
+				topup += maxi(0, item.stack_max - int(e.get("count", 1)))
+	if topup >= op.count:
+		return DotResult.success(null)
+	if op.to_cell.x >= 0 and op.to_cell.y >= 0:
+		return c.fits(item, op.to_cell, op.to_rotated, catalogue)
+	if topup > 0:
+		return DotResult.success(null)
+	if not bool(c.first_fit(item, catalogue).get("ok", false)):
+		return DotResult.fail(DotError.CODE_QUOTA, "there is no room in '%s' for '%s'" % [c.id, item.id])
 	return DotResult.success(null)
 
 
@@ -355,6 +469,11 @@ func _do_add(op: DotInvOp) -> DotResult:
 	var c := _container(op.to_container)
 	var remaining := op.count
 	var made: Array[int] = []
+	# Only the first explicit placement is honoured; the rest find their own spot. A local,
+	# never the op's own field: the op is what is sent, kept for rollback and replayed, and
+	# an op rewritten by applying it is not the op the caller made. Replayed after a
+	# rollback, an ADD whose named cell had been overwritten would land somewhere else.
+	var named: Vector2i = op.to_cell
 
 	# Topped up into existing stacks first. A pickup that makes a second stack of five
 	# beside a stack of five, in a game whose stack limit is twenty, is the single most
@@ -375,7 +494,7 @@ func _do_add(op: DotInvOp) -> DotResult:
 
 	while remaining > 0:
 		var take := mini(item.stack_max, remaining)
-		var cell: Vector2i = op.to_cell
+		var cell: Vector2i = named
 		var rotated := op.to_rotated
 		if cell.x < 0 or cell.y < 0:
 			var spot := c.first_fit(item, catalogue)
@@ -399,8 +518,7 @@ func _do_add(op: DotInvOp) -> DotResult:
 			"state": op.state.duplicate(true),
 		}))
 		remaining -= take
-		# Only the first explicit placement is honoured; the rest find their own spot.
-		op.to_cell = Vector2i(-1, -1)
+		named = Vector2i(-1, -1)
 
 	_open_containers_for(c, made)
 	return DotResult.success({"added": op.count, "left": 0})
@@ -428,8 +546,18 @@ func _do_move(op: DotInvOp) -> DotResult:
 	moved["cell"] = op.to_cell
 	moved["rotated"] = op.to_rotated
 
-	from.remove_entry(op.from_uid)
-	var uid := to.add_entry(moved)
+	# [b]A move keeps its uid.[/b] Ops name an entry by uid, and a client chains a second op
+	# onto the uid its first one predicted. When a move re-allocated, that number belonged to
+	# whatever the server allocated next — the same item if nothing else happened, and a crate
+	# the server added in between if something did, which was then moved validly and in
+	# silence (measured in game-playground). Inside one container it is the same entry with
+	# a new cell; across containers it keeps the number unless the destination already uses it.
+	var uid := op.from_uid
+	if from == to:
+		from.entries[uid] = moved
+	else:
+		from.remove_entry(op.from_uid)
+		uid = to.add_entry_keeping(op.from_uid, moved)
 
 	# The child container's parent record has to move with it, or the depth and cycle
 	# tests are answering about where the bag used to be.
@@ -508,21 +636,127 @@ func _remove_subtree(id: StringName) -> void:
 
 # --- Prediction -------------------------------------------------------------
 
-## A server refused an op this client already applied. Roll it back.
-func rollback(op_dict: Dictionary) -> void:
+## A server refused an op this client already applied. Roll it back — and only it.
+##
+## Returns the dictionaries of the later ops that no longer apply without it, which have also
+## been taken out of the pending list and reported through [signal dropped]. Empty when
+## everything after it still applies, which is the usual case.
+##
+## [b]Only that op.[/b] It used to restore the snapshot from before the op and cut the history
+## there, which undid every op predicted AFTER it too while leaving them in the pending list:
+## a move the server was about to accept vanished from the client's bag and nothing put it
+## back. Now the document is rewound and everything after it is re-applied without it — what
+## the server has already decided first, in the order it arrived, then the pending ops in the
+## order they were predicted, which is the order the server will see them in.
+##
+## The whole document, from the snapshot taken before the op. Not an inverse: an op that was
+## refused after a partial application is exactly the case an inverse cannot describe, and
+## inventing one is how a rollback becomes a duplication.
+##
+## Matched against the OLDEST pending op with the same dictionary, because answers arrive in
+## order. On a predicting manager an op that is not pending is left alone: it was confirmed,
+## or it was already dropped, and a content match in the history would find an identical op
+## the server ACCEPTED and undo that instead. On an authoritative manager, which has no
+## pending list, the newest match in the history is undone — what this has always done there.
+func rollback(op_dict: Dictionary) -> Array[Dictionary]:
+	var target: DotInvOp = null
 	for i in range(_pending.size()):
 		if DotValue.same_dictionary(_pending[i].to_dictionary(), op_dict):
+			target = _pending[i]
 			_pending.remove_at(i)
 			break
-	# The whole document, from the snapshot taken before the op. Not an inverse: an op
-	# that was refused after a partial application is exactly the case an inverse cannot
-	# describe, and inventing one is how a rollback becomes a duplication.
-	for j in range(_history.size() - 1, -1, -1):
-		if DotValue.same_dictionary(_history[j]["op"].to_dictionary(), op_dict):
-			doc.adopt(_history[j]["before"], catalogue)
-			_history.resize(j)
-			reloaded.emit()
-			return
+	if target == null and authoritative:
+		for j in range(_history.size() - 1, -1, -1):
+			if DotValue.same_dictionary(_history[j]["op"].to_dictionary(), op_dict):
+				target = _history[j]["op"]
+				break
+	var out: Array[Dictionary] = []
+	if target == null:
+		return out
+	var at := _history_index(target)
+	if at < 0:
+		# Older than every kept snapshot. Nothing can be restored, and the caller's copy now
+		# disagrees with the server's until it is sent the whole document.
+		DotLog.warn(CHANNEL, "a rollback reached past the kept history; the document needs replacing", {
+			"kept": _history.size(),
+		})
+		return out
+	# Rewound to the older of the op and the oldest op still pending, because anything the
+	# server decided after that was decided BEFORE the pending ones on the server's side.
+	var from := at
+	if not _pending.is_empty():
+		var oldest := _history_index(_pending[0])
+		if oldest >= 0:
+			from = mini(from, oldest)
+	var rebuilt := _rebuild(from, target, null)
+	reloaded.emit()
+	return rebuilt["dropped"]
+
+
+## Rewinds to the snapshot before history entry [param from] and re-applies what came after
+## it: the decided ops in the order they arrived, then [param extra], then the pending ops in
+## the order they were predicted. [param skip] is left out.
+##
+## Re-applied directly, not through [method apply]: they were limited and vetoed once, they
+## must not be sent again, and a rate limit that refused a client's own replays is how a
+## correction turned into a second one (measured in game-playground).
+func _rebuild(from: int, skip: DotInvOp, extra: DotInvOp) -> Dictionary:
+	var tail: Array[DotInvOp] = []
+	for k in range(from, _history.size()):
+		var op: DotInvOp = _history[k]["op"]
+		if op != skip:
+			tail.append(op)
+	doc.adopt(_history[from]["before"], catalogue)
+	_history.resize(from)
+
+	var decided: Array[DotInvOp] = []
+	var predicted: Array[DotInvOp] = []
+	for op in tail:
+		if _pending.has(op):
+			predicted.append(op)
+		else:
+			decided.append(op)
+
+	var dropped_dicts: Array[Dictionary] = []
+	for op in decided:
+		var res := _reapply(op)
+		if not res.ok:
+			# Something the server decided no longer applies here. This copy has diverged,
+			# and only the server's document can say how.
+			DotLog.warn(CHANNEL, "a decided inventory op no longer applies after a rewind", {
+				"op": op.kind, "why": res.error.message if res.error != null else "",
+			})
+
+	var extra_res := DotResult.success(null)
+	if extra != null:
+		extra_res = _reapply(extra)
+
+	for op in predicted:
+		var res := _reapply(op)
+		if not res.ok:
+			_pending.erase(op)
+			dropped_dicts.append(op.to_dictionary())
+			_note_refusal(op, res)
+			dropped.emit(op, res)
+	return {"extra": extra_res, "dropped": dropped_dicts}
+
+
+func _reapply(op: DotInvOp) -> DotResult:
+	var check := validate(op)
+	if not check.ok:
+		return check
+	return _commit(op)
+
+
+## Where [param op] — this object, not an equal one — is in the history, or -1.
+##
+## By identity, because two ops can be the same dictionary ("drop one of #3", twice) and
+## matching by content is how a rewind picks the wrong one of them.
+func _history_index(op: DotInvOp) -> int:
+	for k in range(_history.size() - 1, -1, -1):
+		if _history[k]["op"] == op:
+			return k
+	return -1
 
 
 func confirm(op_dict: Dictionary) -> void:

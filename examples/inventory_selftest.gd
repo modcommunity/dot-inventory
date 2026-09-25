@@ -11,8 +11,8 @@ extends Node
 ## godot --headless --path . res://examples/inventory_selftest.tscn
 ## [/codeblock]
 
-const SECTIONS := 10
-const CHECKS := 113
+const SECTIONS := 11
+const CHECKS := 138
 
 var _passed := 0
 var _failed := 0
@@ -40,6 +40,7 @@ func _run() -> void:
 	_test_query_and_loadout()
 	await _test_the_panel_asks_the_same_question()
 	_test_the_real_loadout()
+	_test_what_the_wire_found()
 
 	_line("")
 	_line("%d sections, %d passed, %d failed" % [_section_count, _passed, _failed])
@@ -786,6 +787,205 @@ func _test_the_real_loadout() -> void:
 	)
 	manager.free()
 	m.queue_free()
+
+
+# --- 11 ---------------------------------------------------------------------
+
+## What carrying this over a real wire found, in game-playground. Each was reproduced here
+## first, against this addon alone, and each check below fails with its fix taken out.
+func _test_what_the_wire_found() -> void:
+	_section("What a real wire found: room, rollback, the server's own ops, uids")
+
+	# 1. validate(ADD) asked about the item, the container and the weight, never room, so a
+	#    shop that asked it charged for a purchase that then failed -- and the failure was
+	#    logged as an ERROR, "failed after it had been validated", for an ordinary full bag.
+	var errors: Array[String] = []
+	var on_record := func(rec: Dictionary) -> void:
+		if int(rec.get("level", 0)) >= DotLog.Level.ERROR:
+			errors.append(str(rec.get("message", "")))
+	DotLog.signals().record.connect(on_record)
+
+	var full := _manager()
+	for i in range(3):
+		var stack := DotInvOp.add(&"ammo", 30, &"belt")
+		full.apply(stack)
+	_check(full.doc.get_container(&"belt").entries.size() == 3, "a three-slot belt holds three full stacks")
+	var more := DotInvOp.add(&"ammo", 1, &"belt")
+	var asked := full.validate(more)
+	_check(not asked.ok, "and validate refuses a fourth, because there is no room for it")
+	_check(asked.code() == DotError.CODE_QUOTA, "as a quota, the same answer applying it gives")
+	var tried := full.apply(more)
+	_check(not tried.ok and tried.code() == DotError.CODE_QUOTA, "applying it is refused the same way")
+	_check(errors.is_empty(), "and nothing logs an ERROR for a full belt (%s)" % ", ".join(errors))
+
+	var topped := _manager()
+	topped.apply(DotInvOp.add(&"ammo", 30, &"belt"))
+	topped.apply(DotInvOp.add(&"ammo", 30, &"belt"))
+	topped.apply(DotInvOp.add(&"ammo", 25, &"belt"))
+	var partial := DotInvOp.add(&"ammo", 10, &"belt")
+	_check(topped.validate(partial).ok, "a pickup that only half fits is still allowed")
+	var half := topped.apply(partial)
+	_check(
+		half.ok and int((half.value as Dictionary).get("left", -1)) == 5,
+		"and adds the half that fits, reporting the rest"
+	)
+	var onto := DotInvOp.add(&"rifle", 1, &"backpack")
+	onto.to_cell = Vector2i(0, 0)
+	topped.apply(onto)
+	var clash := DotInvOp.add(&"brick", 1, &"backpack")
+	clash.to_cell = Vector2i(1, 0)
+	_check(not topped.validate(clash).ok, "an ADD to a named cell that is taken is refused by validate")
+	_check(errors.is_empty(), "still with no ERROR (%s)" % ", ".join(errors))
+	DotLog.signals().record.disconnect(on_record)
+	full.queue_free()
+	topped.queue_free()
+
+	# 6. An ADD with a named cell had that cell overwritten by the manager after it was
+	#    placed, so the op sent to a server was not the op the caller made.
+	var sent: Array[Dictionary] = []
+	var p := _manager()
+	p.authoritative = false
+	p.send_fn = func(d: Dictionary) -> void: sent.append(d)
+	var named := DotInvOp.add(&"ammo", 40, &"backpack")
+	named.to_cell = Vector2i(1, 1)
+	p.apply(named)
+	_check(named.to_cell == Vector2i(1, 1), "applying an ADD does not rewrite the caller's cell")
+	_check(
+		sent.size() == 1 and (sent[0]["cell"] as Array) == [1, 1],
+		"so what is sent names the cell the caller asked for"
+	)
+	p.queue_free()
+
+	# 2. rollback(A) restored the snapshot from before A and cut the history there, which
+	#    silently undid B as well while leaving B in the pending list.
+	sent.clear()
+	var r := _manager()
+	r.authoritative = false
+	r.send_fn = func(d: Dictionary) -> void: sent.append(d)
+	r.apply(DotInvOp.add(&"rifle", 1, &"backpack"))
+	r.apply(DotInvOp.add(&"ammo", 5, &"belt"))
+	r.rollback(sent[0])
+	_check(r.doc.get_container(&"backpack").count_of(&"rifle") == 0, "rolling back A takes A away")
+	_check(
+		r.doc.get_container(&"belt").count_of(&"ammo") == 5,
+		"and leaves B, predicted after it, where it was"
+	)
+	_check(r.pending_count() == 1, "still waiting for its answer")
+	r.queue_free()
+
+	# And a later op that depended on the refused one is dropped and reported, not left
+	# pending for an answer that will be a refusal of something no longer applied.
+	sent.clear()
+	var dep := _manager()
+	dep.authoritative = false
+	dep.send_fn = func(d: Dictionary) -> void: sent.append(d)
+	var lost: Array[DotInvOp] = []
+	dep.dropped.connect(func(op: DotInvOp, _res: DotResult) -> void: lost.append(op))
+	var ammo_add := dep.apply(DotInvOp.add(&"ammo", 5, &"backpack"))
+	var ammo_uid: int = dep.doc.get_container(&"backpack").entries.keys()[0]
+	dep.apply(DotInvOp.move(&"backpack", ammo_uid, &"belt", Vector2i(0, 0)))
+	var gone := dep.rollback(sent[0])
+	_check(
+		ammo_add.ok and gone.size() == 1 and int(gone[0]["kind"]) == DotInvOp.Kind.MOVE,
+		"a move of what was rolled back is dropped, and returned"
+	)
+	_check(lost.size() == 1 and dep.pending_count() == 0, "reported through dropped, and no longer pending")
+	_check(dep.doc.get_container(&"belt").is_empty(), "and nothing is in the belt")
+	dep.queue_free()
+
+	# And a rollback of something no longer pending leaves the history alone: "drop one of
+	# these", twice, is two identical dictionaries, and a content match would find the one
+	# the server ACCEPTED and undo that instead.
+	sent.clear()
+	var twice := _manager()
+	twice.authoritative = false
+	twice.send_fn = func(d: Dictionary) -> void: sent.append(d)
+	twice.apply_authoritative(DotInvOp.add(&"ammo", 10, &"backpack"))
+	var stack_uid: int = twice.doc.get_container(&"backpack").entries.keys()[0]
+	twice.apply(DotInvOp.drop(&"backpack", stack_uid, 1))
+	twice.confirm(sent[0])
+	twice.apply(DotInvOp.drop(&"backpack", stack_uid, 1))
+	twice.rollback(sent[1])
+	twice.rollback(sent[1])
+	_check(
+		twice.doc.get_container(&"backpack").count_of(&"ammo") == 9,
+		"rolling back the refused one twice undoes it once, and never the accepted one"
+	)
+	twice.queue_free()
+
+	# 3. There was no way to apply the SERVER's op to a predicting manager: apply() keeps it
+	#    as the client's own and sends it back up. And it has to land underneath the
+	#    predictions -- an ADD placed by first-fit on the client's predicted layout is not
+	#    where the server put it.
+	var s3 := _manager()
+	var c3 := _manager()
+	c3.authoritative = false
+	var up: Array[Dictionary] = []
+	c3.send_fn = func(d: Dictionary) -> void: up.append(d)
+	var brick_add := DotInvOp.add(&"brick", 1, &"backpack")
+	s3.apply(brick_add, &"server")
+	c3.apply_authoritative(DotInvOp.from_dictionary(brick_add.to_dictionary()))
+	_check(up.is_empty() and c3.pending_count() == 0, "a server's op applied to a client is not sent back, nor pending")
+	var brick_uid: int = c3.doc.get_container(&"backpack").entries.keys()[0]
+	# The client predicts the brick to the far corner; before that reaches the server, the
+	# server adds a rifle -- by first-fit, on a layout with the brick still at the origin.
+	c3.apply(DotInvOp.move(&"backpack", brick_uid, &"backpack", Vector2i(4, 2)))
+	var rifle_add := DotInvOp.add(&"rifle", 1, &"backpack")
+	s3.apply(rifle_add, &"server")
+	var landed := c3.apply_authoritative(DotInvOp.from_dictionary(rifle_add.to_dictionary()))
+	_check(landed.ok and up.size() == 1 and c3.pending_count() == 1, "it lands, and the prediction is still in flight")
+	for d in up:
+		s3.apply(DotInvOp.from_dictionary(d), &"client")
+	c3.confirm(up[0])
+	_check(
+		DotValue.same_dictionary(c3.to_dictionary(), s3.to_dictionary()),
+		"and the client's bag is the server's: the rifle went where the server put it, under the move"
+	)
+	s3.queue_free()
+	c3.queue_free()
+
+	# 4. The rate limit is per actor with no way to exempt the authority's own changes.
+	var lim := _manager()
+	lim.ops_per_second = 2
+	lim.unlimited_actors = [&"server"]
+	lim.setup([&"backpack", &"belt"])
+	var by_server := 0
+	var by_spammer := 0
+	for _i in range(20):
+		if lim.apply(DotInvOp.add(&"ammo", 1, &"backpack"), &"server").ok:
+			by_server += 1
+		if lim.apply(DotInvOp.add(&"ammo", 1, &"backpack"), &"spammer").ok:
+			by_spammer += 1
+	_check(by_server == 20, "an exempt actor is never limited (%d of 20)" % by_server)
+	_check(by_spammer <= 4, "and everybody else still is (%d got through)" % by_spammer)
+	lim.queue_free()
+
+	# 5. A MOVE re-allocated the entry's uid. Ops name entries by uid, so a client chaining
+	#    a second move onto the uid its first predicted named whatever the SERVER had given
+	#    that number to -- measured: a crate the server added in between, moved validly.
+	var server := _manager()
+	server.apply(DotInvOp.add(&"rifle", 1, &"backpack"))
+	var client := _manager()
+	client.adopt(server.to_dictionary())
+	client.authoritative = false
+	var wire: Array[Dictionary] = []
+	client.send_fn = func(d: Dictionary) -> void: wire.append(d)
+	var rifle_uid: int = client.doc.get_container(&"backpack").entries.keys()[0]
+	var first := client.apply(DotInvOp.move(&"backpack", rifle_uid, &"backpack", Vector2i(0, 2)))
+	_check(first.ok and int(first.value) == rifle_uid, "a move inside one container keeps the uid")
+	client.apply(DotInvOp.move(&"backpack", int(first.value), &"backpack", Vector2i(0, 0)))
+	# The server gives a brick before either move reaches it.
+	server.apply(DotInvOp.add(&"brick", 1, &"backpack"))
+	for d in wire:
+		server.apply(DotInvOp.from_dictionary(d), &"client")
+	var sbag := server.doc.get_container(&"backpack")
+	var at_origin := sbag.entry_at(Vector2i(0, 0), server.catalogue)
+	_check(
+		at_origin > 0 and str(sbag.entries[at_origin].get("item", "")) == "rifle",
+		"so the second move moves the rifle on the server too, not what the server added between"
+	)
+	server.queue_free()
+	client.queue_free()
 
 
 func _section(title: String) -> void:
