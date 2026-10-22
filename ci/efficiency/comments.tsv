@@ -1,0 +1,20 @@
+# comments
+# Baselines only shrink: scripts/<gate> --update lowers or drops entries and refuses to add.
+addons/dot_inventory/core/dot_inv_catalogue.gd::long_block	3
+addons/dot_inventory/core/dot_inv_container.gd::banner	3
+addons/dot_inventory/core/dot_inv_container.gd::long_block	7
+addons/dot_inventory/core/dot_inv_doc.gd::history	1
+addons/dot_inventory/core/dot_inv_doc.gd::long_block	3
+addons/dot_inventory/core/dot_inv_item.gd::long_block	6
+addons/dot_inventory/core/dot_inv_loadout_link.gd::history	1
+addons/dot_inventory/core/dot_inv_loadout_link.gd::long_block	6
+addons/dot_inventory/core/dot_inv_op.gd::long_block	3
+addons/dot_inventory/core/dot_inv_query.gd::long_block	3
+addons/dot_inventory/dot_inventory_plugin.gd::long_block	1
+addons/dot_inventory/runtime/dot_inv_manager.gd::banner	3
+addons/dot_inventory/runtime/dot_inv_manager.gd::history	3
+addons/dot_inventory/runtime/dot_inv_manager.gd::long_block	17
+addons/dot_inventory/runtime/dot_inv_panel.gd::long_block	5
+examples/inventory_selftest.gd::banner	12
+examples/inventory_selftest.gd::history	1
+examples/inventory_selftest.gd::long_block	6

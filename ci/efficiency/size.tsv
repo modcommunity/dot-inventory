@@ -1,0 +1,6 @@
+# size
+# Baselines only shrink: scripts/<gate> --update lowers or drops entries and refuses to add.
+addons/dot_inventory/runtime/dot_inv_manager.gd	803
+examples/inventory_selftest.gd	1007
+examples/inventory_selftest.gd::_test_the_panel_asks_the_same_question	90
+examples/inventory_selftest.gd::_test_what_the_wire_found	193
