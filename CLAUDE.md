@@ -37,7 +37,7 @@ Paths under `core/` and `runtime/` are in `addons/dot_inventory/`.
 
 ## Running and testing
 
-The family's two steps ([game-dev/CLAUDE.md](../../CLAUDE.md#validating-anything)), then `timeout 180 godot --headless --path . res://examples/inventory_selftest.tscn`. The checks that matter are the refusals (a move that does not fit, a bag inside itself, a split that is really a move, a weight cap, a rollback that does not duplicate): each is a real exploit in some shipped game, and none is visible in a screenshot.
+The family's two steps ([family CLAUDE.md](../../CLAUDE.md#validating-anything)), then `timeout 180 godot --headless --path . res://examples/inventory_selftest.tscn`. The checks that matter are the refusals (a move that does not fit, a bag inside itself, a split that is really a move, a weight cap, a rollback that does not duplicate): each is a real exploit in some shipped game, and none is visible in a screenshot.
 
 ## Rules that bite
 
