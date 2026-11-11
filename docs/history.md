@@ -16,7 +16,7 @@ All three were in the suite rather than in the addon, and each read as a bug in 
 
 ## What a real wire found
 
-Six, all in the addon, found when game-playground carried a bag over dot-net: the first time any of `send_fn`, `confirm` and `rollback` had been called by anything but this suite. Each was reproduced in the suite's last section against this addon alone before it was fixed, and each check there was armed (fix removed, check failing, fix restored).
+Six, all in the addon, found when game-playlot carried a bag over dot-net: the first time any of `send_fn`, `confirm` and `rollback` had been called by anything but this suite. Each was reproduced in the suite's last section against this addon alone before it was fixed, and each check there was armed (fix removed, check failing, fix restored).
 
 - **`validate` passed an ADD into a full container.** `_validate_add` asked the item, the container and the weight, never room; `_do_add` found out by running out of it, and the manager logged ERROR "failed after it had been validated" for an ordinary full bag. A shop asking `validate` before charging charged for a purchase that then failed. Fixed with `_room_for_add`.
 - **`rollback(A)` undid B as well.** It restored the snapshot from before A and cut the history there, which discarded every op predicted after A while leaving them in the pending list: a move the server was about to accept vanished from the client's bag. And on a predicting manager a rollback of an op that was not pending fell back to the newest content match in the history, which for "drop one of these", sent twice, is the one the server ACCEPTED.

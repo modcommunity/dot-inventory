@@ -32,7 +32,7 @@ An op names the change, so the wire format is the op, undo is the op's snapshot,
 
 `apply()` snapshots the document before performing, and both the failure path and `rollback()` restore it. An inverse is tempting and wrong: an op that failed **part-way** is exactly the case an inverse cannot describe, and inventing one is how a rollback becomes a duplication.
 
-The snapshots are bounded at 64 (`MAX_HISTORY`), because an unbounded undo history is a memory leak with a plausible name, the same shape as dot-console's scrollback and dot-timer's `max_replay_seconds`. A rollback or an `apply_authoritative` that has to rewind past the oldest one cannot, and says so at WARN: the caller's copy then needs the server's whole document, which is why game-playground asks for one past 48 ops in flight.
+The snapshots are bounded at 64 (`MAX_HISTORY`), because an unbounded undo history is a memory leak with a plausible name, the same shape as dot-console's scrollback and dot-timer's `max_replay_seconds`. A rollback or an `apply_authoritative` that has to rewind past the oldest one cannot, and says so at WARN: the caller's copy then needs the server's whole document, which is why game-playlot asks for one past 48 ops in flight.
 
 `rollback(A)` rewinds to before A and re-applies what came after, without A; what no longer applies is taken out of the pending list, returned, and reported through `dropped`. On a predicting manager a rollback of an op that is not pending does nothing. Every rewind re-applies through `_reapply`, not `apply`: not limited, not vetoed and not sent a second time.
 
