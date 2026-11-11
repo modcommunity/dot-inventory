@@ -791,7 +791,7 @@ func _test_the_real_loadout() -> void:
 
 # --- 11 ---------------------------------------------------------------------
 
-## What carrying this over a real wire found, in game-playground. Each was reproduced here
+## What carrying this over a real wire found, in game-playlot. Each was reproduced here
 ## first, against this addon alone, and each check below fails with its fix taken out.
 func _test_what_the_wire_found() -> void:
 	_section("What a real wire found: room, rollback, the server's own ops, uids")

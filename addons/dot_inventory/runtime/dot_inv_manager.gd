@@ -65,7 +65,7 @@ signal dropped(op: DotInvOp, res: DotResult)
 ## [b]For the authority's own changes.[/b] A server applying a purchase, a reward or an admin's
 ## give as its own actor otherwise spends a bucket meant for what a CLIENT sends — thirty
 ## things given in one tick and the thirty-first is "too many inventory operations" (measured
-## in game-playground). A separate actor alone only moves that cap onto the server. The limit is
+## in game-playlot). A separate actor alone only moves that cap onto the server. The limit is
 ## about who can flood, and the server cannot flood itself.
 @export var unlimited_actors: Array[StringName] = []
 
@@ -550,7 +550,7 @@ func _do_move(op: DotInvOp) -> DotResult:
 	# onto the uid its first one predicted. When a move re-allocated, that number belonged to
 	# whatever the server allocated next — the same item if nothing else happened, and a crate
 	# the server added in between if something did, which was then moved validly and in
-	# silence (measured in game-playground). Inside one container it is the same entry with
+	# silence (measured in game-playlot). Inside one container it is the same entry with
 	# a new cell; across containers it keeps the number unless the destination already uses it.
 	var uid := op.from_uid
 	if from == to:
@@ -699,7 +699,7 @@ func rollback(op_dict: Dictionary) -> Array[Dictionary]:
 ##
 ## Re-applied directly, not through [method apply]: they were limited and vetoed once, they
 ## must not be sent again, and a rate limit that refused a client's own replays is how a
-## correction turned into a second one (measured in game-playground).
+## correction turned into a second one (measured in game-playlot).
 func _rebuild(from: int, skip: DotInvOp, extra: DotInvOp) -> Dictionary:
 	var tail: Array[DotInvOp] = []
 	for k in range(from, _history.size()):
