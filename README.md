@@ -1,28 +1,24 @@
-This is the **inventory** asset for TMC's **Dot** collection. It adds a full inventory as a document a server can check: grids, stacks, weight, equipment slots and nested containers, mutated only by operations a server can refuse one at a time.
+# dot-inventory
 
-This collection of assets provides modular building blocks for creating games and applications within the TMC ecosystem, ensuring consistency and interoperability across all `dot-*` assets. This includes core functionality, networking, authentication, cloud integration, and more.
+An inventory that a server can check: grids, stacks, weight, equipment slots and bags inside bags. Every change is an operation the server can accept or refuse one at a time.
 
-**These assets are COMPLETELY OPEN SOURCE**. You are free to use, modify, and distribute them under the terms of the MIT license. The only thing not open source is the back-end web infrastructure. So if you opt into using your own authentication backend instead of integrating with TMC, you will need to build and integrate your own back-end infrastructure.
+Part of TMC's **Dot** collection: modular, MIT-licensed building blocks for games on the TMC platform (only the TMC website back end is closed). It was built with Claude Code and its headless suite passes, but little of it has met real players yet, so expect rough edges and please report what you find.
 
-## From Maintainer & WARNING
-This asset, along with all the others, was built initially with **Claude Code** and will continue to be maintained and extended using it. This is because I (`gamemann`) cannot build the entire TMC platform alone (I wish I could lol).
+## Install
 
-**Please treat this as partially tested.** Every asset has its own headless test suite and those suites pass, but very little of this has been in front of real players yet. Expect rough edges, and please report anything you run into.
+Copy `addons/dot_inventory/` and [dot-core](https://github.com/modcommunity/dot-core)'s `addons/dot_core/` into your project and enable dot-inventory in **Project > Project Settings > Plugins**. dot-core is the only dependency. dot-loadout and dot-ui are optional and are reached by name at runtime.
 
-## Every mutation is an op, and four things fall out of that
+## Use
 
 ```gdscript
 inv.apply(DotInvOp.move(&"backpack", uid, &"belt", Vector2i(0, 0)))
 ```
 
-- **The network shape.** A client sends an op; a server answers yes or no. Sending *state* instead makes the server diff two documents to work out what a player claims to have done, and a diff is ambiguous: "this rifle moved" and "this rifle was destroyed and an identical one appeared" are the same diff, and only one of them is a duplication exploit.
-- **Undo.** An op names what it did rather than what the result looked like.
-- **A partial refusal.** One move out of ten can be refused without the other nine snapping back, which is what makes an inventory feel broken even when it is correct.
-- **Prediction.** A client applies locally, sends, and rolls back on a no.
+A client sends an op and the server answers yes or no. Sending state instead would make the server guess what the player did by comparing two documents, and "the rifle moved" looks the same as "the rifle vanished and an identical one appeared". Ops also give you undo, refusing one move out of ten without the other nine snapping back, and prediction.
 
-## A client predicts, and the server's own changes land underneath
+### Prediction on a client
 
-A predicting manager (`authoritative = false`) keeps what it has applied and not heard about. Three calls reconcile it with the server:
+A manager with `authoritative = false` remembers the ops it applied but has not heard back about.
 
 ```gdscript
 inv.confirm(op_dict)                 # the server said yes
@@ -30,65 +26,36 @@ var lost := inv.rollback(op_dict)    # the server said no: undo that op, and onl
 inv.apply_authoritative(server_op)   # a change the server made: a purchase, a reward
 ```
 
-- **A rollback undoes one op.** The document is rewound to before it and everything predicted after it is re-applied, so a refusal does not take a later move the server is about to accept with it. Anything that no longer applies without it is taken out of the pending list, returned, and reported through `dropped` — the server will refuse it too.
-- **A server's op lands underneath the predictions.** Answers come back in order, so anything still in flight is something the server has not processed yet: the server applied its own op first. `apply_authoritative` rewinds to before the oldest pending op, applies the server's, and re-applies the predictions on top. For an ADD that matters most, because first-fit on the client's predicted layout is not where the server put it. It is never sent back up and never rate-limited.
-- **A move keeps its uid.** Ops name entries by uid, and a client chains its second op onto the uid its first one predicted; a move that re-allocated the uid handed that number to whatever the server added in between.
+- `rollback` rewinds to before that op and re-applies the later ones. Any that no longer fit are dropped and reported through `dropped`.
+- `apply_authoritative` puts the server's own change underneath the pending predictions. It is never sent back and never rate limited.
+- A move keeps its uid, so a client can chain a second op onto the first.
+- `validate(op)` asks everything `apply` will, including room. A shop can ask before it charges.
+- `unlimited_actors` exempts actors (such as the one the server grants purchases as) from `ops_per_second`.
 
-`unlimited_actors` exempts actors from `ops_per_second` — the actor a server applies its own purchases and gives as, which would otherwise spend a player's budget.
+## Settings and behaviour
 
-`validate` asks everything `apply` will find out, room included: an ADD into a full container is refused as `CODE_QUOTA` by `validate`, so a shop can ask before it charges. An ADD that only half fits is allowed, and adds the half.
-
-## The occupancy map is derived, never stored
-
-A grid that keeps both a cell map and an item list can have them disagree. That is this family's most expensive bug shape in its own words: the props asset once used one list for ownership *and* undo, so trimming it for one purpose silently changed the other and a player could hold any number of props for free.
-
-`cells_of()` and `occupied_cells()` are computed from the entries every time they are asked.
-
-## `ignore_uid`, and why moving something one cell to the left is hard
-
-An item moved within its own container collides with **itself**. The obvious workaround, which is to remove it and then place it, is the one that loses the item when the place half fails. `fits(..., ignore_uid)` asks the question that was actually meant.
-
-## Nesting is bounded, and cycles are refused before they exist
-
-A bag inside itself is an infinite loop in every traversal, whether that is weight, save, draw or search, so the symptom is a hang rather than a wrong number. And a bag in a bag in a bag with no limit is a save file whose size is the player's patience.
-
-`can_nest()` walks **up** from the destination before the move. A cycle that already exists cannot be found by anything that has to traverse the structure to look for it: that traversal *is* the hang.
-
-## The complaints this addresses on purpose
-
-| | |
+| Topic | Behaviour |
 | --- | --- |
-| "It made a second stack of five next to my stack of five" | A pickup tops up existing stacks first. |
-| "I dragged twenty onto a stack with room for five and nothing happened" | A partial merge moves five and leaves fifteen. |
-| "My rifle won't fit and there's clearly space" | Rotation is tried at each cell, not after a whole failed pass. |
-| "The sort order changes every time I open it" | `sort_custom` is not stable in Godot, so every comparison breaks ties on the id. |
+| Occupancy | Derived from the entries each time (`cells_of()`, `occupied_cells()`), never stored, so it cannot disagree with the item list. |
+| Moving inside a container | `fits(..., ignore_uid)` ignores the item itself, so a one-cell shift works without remove-then-place. |
+| Nesting | `max_depth` (default 3) limits bags in bags. `can_nest()` walks up from the destination, so cycles are refused before they exist. |
+| Stacks | A pickup tops up existing stacks first. A partial merge moves what fits and leaves the rest. |
+| Rotation | Tried at every cell, not after a full failed pass. |
+| Sorting | Ties break on the id, because Godot's `sort_custom` is not stable. |
+| Filtering and sorting | Done by the client. The server owns the contents. |
 
-## Drag-and-drop asks the same question the server will
+`DotInvPanel` is a code-built grid using Godot's own drag and drop. Its `_can_drop_data` calls `manager.validate(op)`, so the screen never accepts a move the server will refuse.
 
-`DotInvPanel` is a grid built in code with no art and no `Theme`, using Godot's own `_get_drag_data` / `_can_drop_data` / `_drop_data`, which is the **engine's** drag-and-drop rather than dot-ui's, so it works in a project with either and drops onto a screen stack without knowing what one is.
+## With dot-loadout
 
-`_can_drop_data` calls `manager.validate(op)`. A panel with its own idea of what fits will eventually disagree with the server, and the player then sees a move accepted on screen and undone a round trip later.
+`DotInvLoadoutLink` connects the two without either needing the other. `fill_from_loadout` pours a player's `DotLoadout` into a container at match start, and `publish_to_loadout` clears the slots whose items did not survive. Nothing is automatic, because whether a round's inventory is kept is a game design choice. dot-loadout holds what a player owns and brought in; dot-inventory holds what is in the bag right now.
 
-## Filtering and sorting are the client's
+## Test
 
-The server owns what is in the inventory; the client owns how it is shown. Sending a filter to a server makes it responsible for a preference, costs a round trip per keystroke, and gives the player a list that lags behind their own typing. Same rule as the server-browser asset's.
-
-## It meets dot-loadout in exactly one file
-
-`DotInvLoadoutLink`, by duck typing, so this asset parses in a project that does not have dot-loadout. Hand it one player's `DotLoadout` (from `await loadout_manager.active_for(key)`, copied): `fill_from_loadout` pours it into a container at match start, `publish_to_loadout` clears the slots whose items did not survive, and `loadout_manager.publish` validates and saves the result. The division is real:
-
-- **dot-loadout** answers *what do you own and what did you bring in*. It is a permanent, bounded document validated against entitlements before a match.
-- **dot-inventory** answers *what is in your bag right now*. It changes every few seconds, it has a shape, and a server must be able to refuse one move.
-
-Neither direction is automatic. Whether a round's inventory is worth keeping is a design decision (an extraction game says yes, a round-based shooter says no), not something an asset should assume.
-
-## Installing
-
-Copy `addons/dot_inventory/` and [`dot-core`](https://github.com/modcommunity/dot-core)'s `addons/dot_core/` into your project and enable dot-inventory in **Project → Project Settings → Plugins**.
-
-## Dependencies
-
-[dot-core](https://github.com/modcommunity/dot-core). Nothing else. dot-loadout and dot-ui are both optional, and both reached without being named.
+```bash
+godot --headless --path . --import
+godot --headless --path . res://examples/inventory_selftest.tscn
+```
 
 ## Licence
 
