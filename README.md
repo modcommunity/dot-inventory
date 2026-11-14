@@ -38,7 +38,7 @@ inv.apply_authoritative(server_op)   # a change the server made: a purchase, a r
 | --- | --- |
 | Occupancy | Derived from the entries each time (`cells_of()`, `occupied_cells()`), never stored, so it cannot disagree with the item list. |
 | Moving inside a container | `fits(..., ignore_uid)` ignores the item itself, so a one-cell shift works without remove-then-place. |
-| Nesting | `max_depth` (default 3) limits bags in bags. `can_nest()` walks up from the destination, so cycles are refused before they exist. |
+| Nesting | `max_depth` (default 3, 0 = unlimited) limits bags in bags. `can_nest()` walks up from the destination, so cycles are refused before they exist. |
 | Stacks | A pickup tops up existing stacks first. A partial merge moves what fits and leaves the rest. |
 | Rotation | Tried at every cell, not after a full failed pass. |
 | Sorting | Ties break on the id, because Godot's `sort_custom` is not stable. |

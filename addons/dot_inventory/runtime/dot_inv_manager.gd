@@ -51,8 +51,8 @@ signal dropped(op: DotInvOp, res: DotResult)
 ## measured against a state that has already been corrected.
 @export var authoritative: bool = true
 
-## How deep containers may nest.
-@export_range(1, 16, 1) var max_depth: int = 3
+## How deep containers may nest. Default 3, 0 = unlimited; negative is refused when the inventory is set up.
+@export_range(0, 16, 1, "or_greater") var max_depth: int = 3
 
 ## The most ops one actor may apply per second. Zero is unlimited.
 ##
@@ -100,6 +100,8 @@ func setup(root_containers: Array = []) -> DotResult:
 	if not res.ok:
 		return res.wrap("inventory catalogue")
 
+	if max_depth < 0:
+		return DotResult.fail(DotError.CODE_INVALID, "max_depth %d is negative" % max_depth, "use 0 for unlimited")
 	doc = DotInvDoc.new()
 	doc.max_depth = max_depth
 	doc._catalogue = catalogue

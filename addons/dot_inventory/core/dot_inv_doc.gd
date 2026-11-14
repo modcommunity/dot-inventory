@@ -23,7 +23,7 @@ var containers: Dictionary = {}
 ## child id -> [code]{parent: StringName, uid: int}[/code].
 var parents: Dictionary = {}
 
-## How deep a container may be. Depth 0 is the root.
+## How deep a container may be. Depth 0 is the root. Default 3, 0 = unlimited (cycles are still refused).
 var max_depth: int = 3
 
 var _next_child := 1
@@ -46,7 +46,7 @@ func open_container(
 	parent_id: StringName, uid: int, definition: Dictionary, catalogue: DotInvCatalogue
 ) -> DotResult:
 	var depth := depth_of(parent_id) + 1
-	if depth > max_depth:
+	if max_depth > 0 and depth > max_depth:
 		return DotResult.fail(
 			DotError.CODE_FORBIDDEN,
 			"a container %d deep, and %d is the limit" % [depth, max_depth],
@@ -97,7 +97,7 @@ func can_nest(child: StringName, into: StringName) -> DotResult:
 			)
 		at = StringName(str((parents[at] as Dictionary).get("parent", "")))
 		guard += 1
-	if depth_of(into) + 1 > max_depth:
+	if max_depth > 0 and depth_of(into) + 1 > max_depth:
 		return DotResult.fail(
 			DotError.CODE_FORBIDDEN, "that would be %d containers deep" % (depth_of(into) + 1)
 		)
@@ -158,6 +158,11 @@ func to_dictionary() -> Dictionary:
 
 
 func adopt(d: Dictionary, catalogue: DotInvCatalogue) -> DotResult:
+	if int(d.get("max_depth", 3)) < 0:
+		return DotResult.fail(
+			DotError.CODE_INVALID, "max_depth %d is negative" % int(d.get("max_depth", 3)),
+			"use 0 for unlimited"
+		)
 	containers.clear()
 	parents.clear()
 	_catalogue = catalogue
@@ -208,7 +213,7 @@ func _definition_id_of(id: StringName) -> StringName:
 
 func describe_lines(catalogue: DotInvCatalogue) -> PackedStringArray:
 	var out := PackedStringArray()
-	out.append("inventory: %d containers, depth limit %d" % [containers.size(), max_depth])
+	out.append("inventory: %d containers, depth limit %s" % [containers.size(), str(max_depth) if max_depth > 0 else "none"])
 	for id in ordered_ids():
 		var prefix := "  " + "  ".repeat(depth_of(id))
 		for line in (containers[id] as DotInvContainer).describe_lines(catalogue):

@@ -12,7 +12,7 @@ extends Node
 ## [/codeblock]
 
 const SECTIONS := 11
-const CHECKS := 138
+const CHECKS := 140
 
 var _passed := 0
 var _failed := 0
@@ -443,6 +443,12 @@ func _test_nesting() -> void:
 		not m.doc.can_nest(&"backpack", grandchild).ok,
 		"nesting stops at the declared depth"
 	)
+
+	m.doc.max_depth = 0
+	_check(m.doc.can_nest(&"backpack", grandchild).ok, "max_depth 0 is unlimited")
+	m.doc.max_depth = -1
+	_check(not m.doc.adopt(m.doc.to_dictionary(), m.doc._catalogue).ok, "a negative max_depth is refused on adopt")
+	m.doc.max_depth = 2
 
 	# Dropping a container takes what is inside it with it.
 	var before := m.doc.containers.size()
