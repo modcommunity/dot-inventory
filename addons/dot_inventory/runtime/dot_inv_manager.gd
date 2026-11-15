@@ -330,36 +330,7 @@ func _validate_add(op: DotInvOp) -> DotResult:
 		return DotResult.fail(DotError.CODE_INVALID, "adding %d of something" % op.count)
 	if not c.within_weight(item.weight * float(op.count), catalogue, doc):
 		return DotResult.fail(DotError.CODE_QUOTA, "'%s' is too heavy for that" % op.item)
-	return _room_for_add(item, c, op)
-
-
-## Whether [method _do_add] will find room, asked the same way it will look for it.
-##
-## [b]Validation has to ask everything the perform finds out.[/b] Until 2026-09-25 an ADD
-## into a full container passed [method validate], and [method _do_add] discovered the lack
-## of room by running out of it — so a shop that asked `validate` first charged for a
-## purchase that then failed, and the failure was logged as an ERROR ("failed after it had
-## been validated") for what is an ordinary full bag.
-##
-## The rules mirror [method _do_add] exactly: existing stacks are topped up first; a named
-## cell must take the first new stack; otherwise the first new stack goes by first-fit, and
-## an ADD that tops up or places anything at all is a (partial) success, never a refusal.
-func _room_for_add(item: DotInvItem, c: DotInvContainer, op: DotInvOp) -> DotResult:
-	var topup := 0
-	if item.stack_max > 1:
-		for uid in c.entries.keys():
-			var e: Dictionary = c.entries[uid]
-			if str(e.get("item", "")) == String(item.id):
-				topup += maxi(0, item.stack_max - int(e.get("count", 1)))
-	if topup >= op.count:
-		return DotResult.success(null)
-	if op.to_cell.x >= 0 and op.to_cell.y >= 0:
-		return c.fits(item, op.to_cell, op.to_rotated, catalogue)
-	if topup > 0:
-		return DotResult.success(null)
-	if not bool(c.first_fit(item, catalogue).get("ok", false)):
-		return DotResult.fail(DotError.CODE_QUOTA, "there is no room in '%s' for '%s'" % [c.id, item.id])
-	return DotResult.success(null)
+	return c.room_for_add(item, op.count, op.to_cell, op.to_rotated, catalogue)
 
 
 func _validate_move(op: DotInvOp) -> DotResult:

@@ -52,7 +52,7 @@ In one process an op, an entry and an actor can be told apart by being the same 
 
 ## Validation asks what applying will do
 
-`_validate_add` checks room with `_room_for_add`, which asks exactly what `_do_add` will look for: top-ups first, a named cell, then first-fit. A full container is refused with `CODE_QUOTA`. An ADD that tops up or places anything is still allowed, because a pickup that half fits adds the half. Validation and application asking different questions is how a shop charges for a purchase that then fails.
+`_validate_add` checks room with `DotInvContainer.room_for_add`, which asks exactly what `_do_add` will look for: top-ups first, a named cell, then first-fit. A full container is refused with `CODE_QUOTA`. An ADD that tops up or places anything is still allowed, because a pickup that half fits adds the half. Validation and application asking different questions is how a shop charges for a purchase that then fails.
 
 ## `ignore_uid` is not an optimisation
 

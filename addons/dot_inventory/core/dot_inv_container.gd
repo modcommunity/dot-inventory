@@ -292,3 +292,30 @@ func describe_lines(catalogue: DotInvCatalogue) -> PackedStringArray:
 			" rotated" if bool(e.get("rotated", false)) else "",
 		])
 	return out
+
+
+## Whether an ADD of [param count] fits, asked exactly as [method DotInvManager._do_add] places
+## it: existing stacks are topped up first, a named [param cell] must take the first new stack,
+## otherwise first-fit; topping up or placing anything is a (partial) success, never a refusal.
+func room_for_add(
+	item: DotInvItem,
+	count: int,
+	cell: Vector2i,
+	rotated: bool,
+	catalogue: DotInvCatalogue
+) -> DotResult:
+	var topup := 0
+	if item.stack_max > 1:
+		for uid in entries.keys():
+			var e: Dictionary = entries[uid]
+			if str(e.get("item", "")) == String(item.id):
+				topup += maxi(0, item.stack_max - int(e.get("count", 1)))
+	if topup >= count:
+		return DotResult.success(null)
+	if cell.x >= 0 and cell.y >= 0:
+		return fits(item, cell, rotated, catalogue)
+	if topup > 0:
+		return DotResult.success(null)
+	if not bool(first_fit(item, catalogue).get("ok", false)):
+		return DotResult.fail(DotError.CODE_QUOTA, "there is no room in '%s' for '%s'" % [id, item.id])
+	return DotResult.success(null)
