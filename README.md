@@ -1,4 +1,4 @@
-[![Inventory - GameSpice addon](docs/banner.png)](https://moddingcommunity.com/a/239-dot-inventory)
+[![Inventory - GameSpice addon](docs/banner.png)](https://moddingcommunity.com/a/40-gs-inventory)
 
 An inventory that a server can check: grids, stacks, weight, equipment slots and bags inside bags. Every change is an operation the server can accept or refuse one at a time.
 
