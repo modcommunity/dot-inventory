@@ -4,7 +4,7 @@ extends RefCounted
 
 ## Sorting and filtering, applied locally and never by a server.
 ##
-## [b]dot-browser's rule, and it is the same rule for the same reason.[/b] A filter is a
+## [b]GameSpice Browser's rule, and it is the same rule for the same reason.[/b] A filter is a
 ## question about what one person wants to look at; sending it to a server makes the
 ## server responsible for a preference, costs a round trip per keystroke, and gives a
 ## player a list that lags behind their own typing. The server owns what is in the

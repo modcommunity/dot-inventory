@@ -1,10 +1,10 @@
-# dot-inventory
+# GameSpice Inventory
 
 An inventory as a document a server validates, mutated only by ops it can refuse one at a time: grids and slot lists, stacks, weight, nesting, client prediction with rollback, and a drag-and-drop panel with no art.
 
 Read the family [CLAUDE.md](../../CLAUDE.md) first; this file is only what is specific to inventories.
 
-**The distributable is `addons/dot_inventory/`.** It requires [dot-core](../dot-core) and nothing else. dot-loadout is linked only so the self-test can run `DotInvLoadoutLink` against the real document; the addon never names it.
+**The distributable is `addons/dot_inventory/`.** It requires [GameSpice Core](../dot-core) and nothing else. dot-loadout is linked only so the self-test can run `DotInvLoadoutLink` against the real document; the addon never names it.
 
 ```bash
 ln -s ../../dot-core/addons/dot_core addons/dot_core
@@ -15,7 +15,7 @@ ln -s ../../dot-loadout/addons/dot_loadout addons/dot_loadout   # the self-test 
 
 | Read | Before |
 | --- | --- |
-| [docs/design.md](docs/design.md) | anything: why not dot-loadout, ops, snapshots, prediction, identity, what is never stored, nesting, the panel, what is not here |
+| [docs/design.md](docs/design.md) | anything: why not GameSpice Loadout, ops, snapshots, prediction, identity, what is never stored, nesting, the panel, what is not here |
 | [docs/history.md](docs/history.md) | the bugs a real wire found, and the suite's own false alarms |
 
 ## Layout
@@ -28,10 +28,10 @@ ln -s ../../dot-loadout/addons/dot_loadout addons/dot_loadout   # the self-test 
 | `core/dot_inv_doc.gd` | `DotInvDoc`: several containers, the parent links, the depth bound and the cycle test |
 | `core/dot_inv_op.gd` | `DotInvOp`: one mutation. The wire format, the undo record and the refusal unit |
 | `core/dot_inv_query.gd` | `DotInvQuery`: filtering and sorting, locally |
-| `core/dot_inv_loadout_link.gd` | `DotInvLoadoutLink`: the only file that knows dot-loadout exists |
+| `core/dot_inv_loadout_link.gd` | `DotInvLoadoutLink`: the only file that knows GameSpice Loadout exists |
 | `runtime/dot_inv_manager.gd` | `DotInvManager`: validates, applies, snapshots, predicts, rolls back, lands a server's op underneath the predictions |
 | `runtime/dot_inv_panel.gd` | `DotInvPanel`: a grid with native drag-and-drop; asks `validate` before a cell lights up |
-| `examples/inventory_selftest.tscn` | the suite; the dot-loadout section needs dot-loadout linked |
+| `examples/inventory_selftest.tscn` | the suite; the GameSpice Loadout section needs GameSpice Loadout linked |
 
 Paths under `core/` and `runtime/` are in `addons/dot_inventory/`.
 

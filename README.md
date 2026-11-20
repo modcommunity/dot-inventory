@@ -6,7 +6,7 @@ Part of the [**GameSpice**](https://gamespice.net) collection: modular, MIT-lice
 
 ## Install
 
-Copy `addons/dot_inventory/` and [dot-core](https://github.com/gamespice-platform/core)'s `addons/dot_core/` into your project and enable dot-inventory in **Project > Project Settings > Plugins**. dot-core is the only dependency. dot-loadout and dot-ui are optional and are reached by name at runtime.
+Copy `addons/dot_inventory/` and [GameSpice Core](https://github.com/gamespice-platform/core)'s `addons/dot_core/` into your project and enable dot-inventory in **Project > Project Settings > Plugins**. dot-core is the only dependency. dot-loadout and dot-ui are optional and are reached by name at runtime.
 
 ## Use
 
@@ -48,7 +48,7 @@ inv.apply_authoritative(server_op)   # a change the server made: a purchase, a r
 
 ## With Loadout
 
-`DotInvLoadoutLink` connects the two without either needing the other. `fill_from_loadout` pours a player's `DotLoadout` into a container at match start, and `publish_to_loadout` clears the slots whose items did not survive. Nothing is automatic, because whether a round's inventory is kept is a game design choice. dot-loadout holds what a player owns and brought in; dot-inventory holds what is in the bag right now.
+`DotInvLoadoutLink` connects the two without either needing the other. `fill_from_loadout` pours a player's `DotLoadout` into a container at match start, and `publish_to_loadout` clears the slots whose items did not survive. Nothing is automatic, because whether a round's inventory is kept is a game design choice. GameSpice Loadout holds what a player owns and brought in; GameSpice Inventory holds what is in the bag right now.
 
 ## Test
 

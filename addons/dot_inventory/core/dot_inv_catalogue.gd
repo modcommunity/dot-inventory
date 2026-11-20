@@ -5,7 +5,7 @@ extends Resource
 ## Every item and every container shape a game has, as a document.
 ##
 ## Validated at boot, on a server, with no icons, no meshes and no scenes — the same rule
-## as dot-loadout's schema and dot-user-avatar's. What that buys is that a typo in an item
+## as GameSpice Loadout's schema and GameSpice User Avatar's. What that buys is that a typo in an item
 ## id fails a start-up rather than producing an empty slot in a firefight.
 
 @export var items: Array[DotInvItem] = []

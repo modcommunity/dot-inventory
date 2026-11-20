@@ -1,7 +1,7 @@
 @tool
 extends EditorPlugin
 
-## Editor entry point for dot-inventory. Registers inspector types only.
+## Editor entry point for GameSpice Inventory. Registers inspector types only.
 ##
 ## No autoloads: a server holding every player's inventory and a client predicting its own
 ## are two managers in one process, and one of them is authoritative and the other is not.

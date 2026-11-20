@@ -156,7 +156,7 @@ func _test_grid_placement() -> void:
 	)
 
 	# Two representations of one fact is this family's own most expensive bug shape:
-	# dot-props used one list for ownership and undo, and trimming it for one purpose
+	# GameSpice Props used one list for ownership and undo, and trimming it for one purpose
 	# silently changed the other.
 	_check(
 		bag.entry_at(Vector2i(0, 0), m.catalogue) == uid,

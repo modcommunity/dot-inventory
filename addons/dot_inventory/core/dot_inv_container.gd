@@ -9,7 +9,7 @@ extends RefCounted
 ## interesting half.
 ##
 ## [b]The occupancy map is derived, never stored.[/b] Two representations of one fact is
-## the bug this family has shipped most often in its own shape: dot-props used one list
+## the bug this family has shipped most often in its own shape: GameSpice Props used one list
 ## for ownership and undo, so trimming the undo depth removed props from their owner's
 ## account, and a player could hold any number of props for free. A grid whose cell map
 ## and whose item list can disagree is the same bug with a nicer interface.

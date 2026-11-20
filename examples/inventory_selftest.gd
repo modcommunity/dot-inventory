@@ -271,9 +271,9 @@ func _test_query_and_loadout() -> void:
 class FakeLoadout:
 	extends RefCounted
 
-	## dot-loadout's DotLoadout, the per-player document, reduced to what the link calls --
+	## GameSpice Loadout's DotLoadout, the per-player document, reduced to what the link calls --
 	## with the real signatures, not invented ones. The link used to duck-type against
-	## `slots()` and `set_items()`, which this fake had and dot-loadout never did, so it
+	## `slots()` and `set_items()`, which this fake had and GameSpice Loadout never did, so it
 	## passed here and worked nowhere. Section 10 runs the same calls against the real one.
 
 	var entries: Dictionary = {}
@@ -417,7 +417,7 @@ const REAL_LOADOUT := "res://addons/dot_loadout/core/dot_loadout.gd"
 const REAL_LOADOUT_MANAGER := "res://addons/dot_loadout/dot_loadout_manager.gd"
 
 
-## Against dot-loadout itself, linked into this project for the test (see .gitignore),
+## Against GameSpice Loadout itself, linked into this project for the test (see .gitignore),
 ## and reached by path so that nothing here names a class this addon cannot depend on.
 func _test_the_real_loadout() -> void:
 	_section("The link speaks the real dot-loadout, not a fake of itself")

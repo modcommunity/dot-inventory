@@ -20,7 +20,7 @@ extends RefCounted
 ## that makes an inventory feel broken even when it is correct.
 ##
 ## [b]Prediction.[/b] A client applies the op locally, sends it, and rolls it back if the
-## answer is no. That is the same shape dot-net's predictor uses for movement, and it has
+## answer is no. That is the same shape GameSpice Net's predictor uses for movement, and it has
 ## the same trap: **do not reconcile on top of a reconciliation.** game-hungario's bridge
 ## replayed inputs against values that had already been rewound and its correction rate
 ## was 0.500; removing the extra pass took it to 0.032.

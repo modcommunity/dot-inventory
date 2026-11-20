@@ -1,19 +1,19 @@
 class_name DotInvLoadoutLink
 extends RefCounted
 
-## The one file in this addon that knows dot-loadout exists, and it does so by duck typing.
+## The one file in this addon that knows GameSpice Loadout exists, and it does so by duck typing.
 ##
-## [b]Deliberately one file.[/b] dot-npc-ai has the same arrangement with dot-npc — only
+## [b]Deliberately one file.[/b] GameSpice NPC AI has the same arrangement with GameSpice NPC — only
 ## one file in it names the other — and the reason is the family's hardest rule: apart from
-## dot-core, nothing may be a hard dependency. Naming `DotLoadoutManager` anywhere in here
+## GameSpice Core, nothing may be a hard dependency. Naming `DotLoadoutManager` anywhere in here
 ## would make this addon fail to parse in a project that does not have it, which is most
 ## projects.
 ##
 ## [b]The division between the two is real, not a naming accident.[/b]
 ##
-## dot-loadout answers [i]what do you own and what did you bring in[/i]: a permanent,
+## GameSpice Loadout answers [i]what do you own and what did you bring in[/i]: a permanent,
 ## bounded document a server validates against a schema and entitlements before a match,
-## with no content loaded. dot-inventory answers [i]what is in your bag right now[/i]: it
+## with no content loaded. GameSpice Inventory answers [i]what is in your bag right now[/i]: it
 ## changes every few seconds, it has a shape, things stack in it, and a server has to be
 ## able to refuse one move without refusing the whole document.
 ##
@@ -33,16 +33,16 @@ extends RefCounted
 ## - [method fill_from_loadout] -- what a player brought becomes what is in their hands.
 ## - [method publish_to_loadout] -- what did not survive leaves the loadout.
 ##
-## [b]The document, because that is the only thing in dot-loadout that answers per slot.[/b]
+## [b]The document, because that is the only thing in GameSpice Loadout that answers per slot.[/b]
 ## This file used to duck-type against [code]slots()[/code], [code]item_in(slot)[/code] and
-## [code]set_items(ids)[/code] on "the manager" -- and nothing in dot-loadout had the first
+## [code]set_items(ids)[/code] on "the manager" -- and nothing in GameSpice Loadout had the first
 ## or the last, so it only ever worked against the self-test's fake of itself. The manager
 ## is per-server and asynchronous ([code]active_for[/code] awaits a store); the document
 ## is per-player and synchronous, and what it has is [code]filled_slots()[/code],
 ## [code]item_in(slot)[/code], [code]count_in(slot, fallback)[/code], [code]set_item[/code]
 ## and [code]clear_slot(slot)[/code]. Those are what this reads and writes.
 ##
-## [b]Saving is not this link's job.[/b] [code]DotLoadoutManager.publish[/code] is dot-loadout's
+## [b]Saving is not this link's job.[/b] [code]DotLoadoutManager.publish[/code] is GameSpice Loadout's
 ## trust boundary -- rate, cap, schema and entitlements -- and a link that wrote the store
 ## itself would be a way round it. The game hands the edited document to publish.
 ##
@@ -53,7 +53,7 @@ extends RefCounted
 const CHANNEL := "inventory"
 
 ## One player's loadout document: anything with [code]filled_slots()[/code] and
-## [code]item_in(slot)[/code] -- dot-loadout's [code]DotLoadout[/code] in practice, which is
+## [code]item_in(slot)[/code] -- GameSpice Loadout's [code]DotLoadout[/code] in practice, which is
 ## not named here. [method publish_to_loadout] also needs [code]clear_slot(slot)[/code].
 var loadout: Object = null
 
@@ -119,7 +119,7 @@ func fill_from_loadout(
 ##
 ## [b]Only removal crosses back.[/b] Which slot a newly found item belongs in is the loadout
 ## schema's question (kinds, tags, budgets, entitlements), and this file cannot ask it
-## without naming dot-loadout. So an item picked up mid-match is left for the game to
+## without naming GameSpice Loadout. So an item picked up mid-match is left for the game to
 ## [code]set_item[/code] if it wants to keep it, and [code]DotLoadoutManager.publish[/code]
 ## then refuses whatever the schema would not have allowed. An id this inventory's catalogue
 ## does not carry is left alone. Two slots holding the same id
@@ -169,7 +169,7 @@ func _slot_names() -> Array:
 
 
 ## Once per link, and only when something WAS wired: a null loadout is a game with no
-## dot-loadout, which is the ordinary case and not worth a line. Anything else that fails
+## GameSpice Loadout, which is the ordinary case and not worth a line. Anything else that fails
 ## the duck-typed check means a round starts with empty hands, or ends without keeping
 ## what survived, and nothing else in the process would say why. WARN, because it is
 ## wiring somebody has to fix -- most likely the manager handed over where one player's

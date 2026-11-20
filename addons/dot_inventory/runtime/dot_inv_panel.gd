@@ -3,10 +3,10 @@ extends Control
 
 ## A grid you can drag things around in, built in code and themed by nothing.
 ##
-## [b]It does not depend on dot-ui, and that is not an oversight.[/b] Godot's own
+## [b]It does not depend on GameSpice UI, and that is not an oversight.[/b] Godot's own
 ## [method Control._get_drag_data], [method Control._can_drop_data] and
 ## [method Control._drop_data] are the drag-and-drop mechanism — they are the engine, not
-## dot-ui — so a panel built on them works in a project that has dot-ui and in one that does
+## GameSpice UI — so a panel built on them works in a project that has GameSpice UI and in one that does
 ## not, and drops onto a `DotScreen` without knowing what one is.
 ##
 ## [b]What it draws is not the point. What it refuses is.[/b] Every drop asks
@@ -23,7 +23,7 @@ extends Control
 ## add_child(panel)
 ## [/codeblock]
 ##
-## Ships no art and no [Theme], for dot-ui's reason. A game that wants icons sets
+## Ships no art and no [Theme], for GameSpice UI's reason. A game that wants icons sets
 ## [member icon_resolver]; without one, a cell draws the item's id.
 
 ## A drag ended on this panel and the op was applied.

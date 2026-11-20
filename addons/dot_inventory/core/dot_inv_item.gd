@@ -4,19 +4,19 @@ extends Resource
 
 ## What an item is: a document of ids and numbers, with no content in it.
 ##
-## Named [code]DotInvItem[/code] rather than [code]DotItem[/code] because dot-loadout
+## Named [code]DotInvItem[/code] rather than [code]DotItem[/code] because GameSpice Loadout
 ## already has that name and [code]class_name[/code] is global in Godot — these install
 ## side by side. The collision is a symptom of something real, though, and it is worth
 ## being explicit about the division:
 ##
-## [b]dot-loadout answers "what do you own and what did you bring in".[/b] It is a
+## [b]GameSpice Loadout answers "what do you own and what did you bring in".[/b] It is a
 ## permanent, bounded document a server validates against entitlements before a match.
-## [b]dot-inventory answers "what is in your bag right now".[/b] It changes every few
+## [b]GameSpice Inventory answers "what is in your bag right now".[/b] It changes every few
 ## seconds, it has a shape, things stack in it, and the server has to be able to refuse
 ## one move without refusing the document.
 ##
 ## They meet in exactly one file, [DotInvLoadoutLink], which is the same arrangement
-## dot-npc-ai has with dot-npc: only one file in it names the other.
+## GameSpice NPC AI has with GameSpice NPC: only one file in it names the other.
 
 enum Kind {
 	## Stacks, has no state of its own. Ammunition, materials, currency.
@@ -70,7 +70,7 @@ enum Kind {
 
 ## An icon's PATH, not a [Texture2D].
 ##
-## The rule dot-props, dot-audio and dot-fx all follow: a **mounted pack's `class_name`
+## The rule GameSpice Props, GameSpice Audio and GameSpice FX all follow: a **mounted pack's `class_name`
 ## globals are not registered in the host**, so a catalogue that preloads cannot describe
 ## delivered content — and a server validating an inventory must not need an icon.
 @export var icon_path: String = ""

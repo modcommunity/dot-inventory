@@ -244,7 +244,7 @@ func apply_authoritative(op: DotInvOp, actor: StringName = &"server") -> DotResu
 ##
 ## Restored from the snapshot on a failure rather than undone step by step. An op that failed
 ## part-way through is exactly the case an inverse cannot describe, and this family has the
-## matching lesson from dot-props: one list used for two purposes meant trimming it for one
+## matching lesson from GameSpice Props: one list used for two purposes meant trimming it for one
 ## purpose silently changed the other.
 func _commit(op: DotInvOp) -> DotResult:
 	var before := doc.to_dictionary()
