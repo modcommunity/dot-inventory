@@ -1,4 +1,4 @@
-[![dot-inventory - GameSpice addon](docs/banner.png)](https://moddingcommunity.com/a/239-dot-inventory)
+[![Inventory - GameSpice addon](docs/banner.png)](https://moddingcommunity.com/a/239-dot-inventory)
 
 An inventory that a server can check: grids, stacks, weight, equipment slots and bags inside bags. Every change is an operation the server can accept or refuse one at a time.
 
@@ -46,7 +46,7 @@ inv.apply_authoritative(server_op)   # a change the server made: a purchase, a r
 
 `DotInvPanel` is a code-built grid using Godot's own drag and drop. Its `_can_drop_data` calls `manager.validate(op)`, so the screen never accepts a move the server will refuse.
 
-## With dot-loadout
+## With Loadout
 
 `DotInvLoadoutLink` connects the two without either needing the other. `fill_from_loadout` pours a player's `DotLoadout` into a container at match start, and `publish_to_loadout` clears the slots whose items did not survive. Nothing is automatic, because whether a round's inventory is kept is a game design choice. dot-loadout holds what a player owns and brought in; dot-inventory holds what is in the bag right now.
 
